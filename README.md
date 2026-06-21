@@ -23,6 +23,15 @@ pnpm typecheck
 pnpm test
 ```
 
+## ドキュメント
+
+読者別の詳細ドキュメントは [docs/README.md](./docs/README.md) から確認できます。
+
+- 投稿利用者向け: [docs/user/getting-started.md](./docs/user/getting-started.md)
+- 管理者向け: [docs/admin/setup.md](./docs/admin/setup.md)
+- 共通概念: [docs/common/concepts.md](./docs/common/concepts.md)
+- 状態と安全ルール: [docs/common/status-and-safety.md](./docs/common/status-and-safety.md)
+
 ## Cloudflare Resource 作成
 
 ```bash
