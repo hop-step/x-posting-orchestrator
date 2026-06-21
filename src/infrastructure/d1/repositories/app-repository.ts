@@ -1,6 +1,9 @@
 import { D1AuthRepository } from "./auth-repository";
 import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord, PublicationStepPlan } from "../../../domain/publications/entities";
 import type { AuditLogInput, IdempotencyRecord, PublicationRepository } from "../../../application/repository";
+import type { XAccount } from "../../../domain/auth/types";
+import { randomHex } from "../../../shared/ids";
+import type { PublishQueueMessage } from "../../../workers/messages";
 
 interface PublicationRow {
   id: string;
@@ -231,6 +234,80 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
         input.contentHash,
         JSON.stringify(input.metadata),
         input.createdAtMs
+      )
+      .run();
+  }
+
+  async claimDuePublications(nowMs: number, leaseDurationMs: number, limit: number): Promise<PublishQueueMessage[]> {
+    const candidates = await this.database
+      .prepare(
+        `SELECT id, revision, content_hash, status
+         FROM publications
+         WHERE status IN ('SCHEDULED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')
+           AND next_action_at_ms <= ?
+           AND (lease_until_ms IS NULL OR lease_until_ms < ?)
+         ORDER BY next_action_at_ms ASC
+         LIMIT ?`
+      )
+      .bind(nowMs, nowMs, limit)
+      .all<{ id: string; revision: number; content_hash: string; status: PublicationRecord["status"] }>();
+
+    const messages: PublishQueueMessage[] = [];
+    for (const candidate of candidates.results) {
+      const leaseToken = randomHex(16);
+      const result = await this.database
+        .prepare(
+          `UPDATE publications
+           SET status = 'QUEUED', lease_token = ?, lease_until_ms = ?, updated_at_ms = ?
+           WHERE id = ?
+             AND revision = ?
+             AND content_hash = ?
+             AND status IN ('SCHEDULED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')
+             AND next_action_at_ms <= ?
+             AND (lease_until_ms IS NULL OR lease_until_ms < ?)`
+        )
+        .bind(leaseToken, nowMs + leaseDurationMs, nowMs, candidate.id, candidate.revision, candidate.content_hash, nowMs, nowMs)
+        .run();
+      if (result.meta.changes === 1) {
+        messages.push({
+          version: 1,
+          publicationId: candidate.id,
+          revision: candidate.revision,
+          contentHash: candidate.content_hash,
+          leaseToken,
+          reason: candidate.status === "AWAITING_FOLLOW_UP" ? "FOLLOW_UP" : candidate.status === "RETRY_SCHEDULED" ? "RETRY" : "SCHEDULED",
+          enqueuedAtMs: nowMs
+        });
+      }
+    }
+    return messages;
+  }
+
+  async updateXAccount(account: XAccount): Promise<void> {
+    await this.database
+      .prepare(
+        `UPDATE x_accounts SET
+          name = ?, x_user_id = ?, x_username = ?, status = ?, longform_capability = ?, self_reply_capability = ?,
+          access_token_ciphertext = ?, access_token_iv = ?, refresh_token_ciphertext = ?, refresh_token_iv = ?,
+          token_key_version = ?, access_token_expires_at_ms = ?, scopes_json = ?, updated_at_ms = ?
+        WHERE id = ?`
+      )
+      .bind(
+        account.name,
+        account.xUserId,
+        account.xUsername,
+        account.status,
+        account.longformCapability,
+        account.selfReplyCapability,
+        account.accessTokenCiphertext,
+        account.accessTokenIv,
+        account.refreshTokenCiphertext,
+        account.refreshTokenIv,
+        account.tokenKeyVersion,
+        account.accessTokenExpiresAtMs,
+        JSON.stringify(account.scopes),
+        account.updatedAtMs,
+        account.id
       )
       .run();
   }

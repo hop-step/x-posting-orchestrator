@@ -2,6 +2,8 @@ import type { AuthRepository } from "../../domain/auth/authorization";
 import type { ApiClient, ClientAccountPermission, XAccount } from "../../domain/auth/types";
 import type { ApprovalRecord, PublicationBundle, PublicationRecord } from "../../domain/publications/entities";
 import type { AuditLogInput, IdempotencyRecord, PublicationRepository, SeedData } from "../../application/repository";
+import { randomHex } from "../../shared/ids";
+import type { PublishQueueMessage } from "../../workers/messages";
 
 export class MemoryRepository implements PublicationRepository, AuthRepository {
   readonly clients = new Map<string, ApiClient>();
@@ -30,6 +32,10 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
 
   async getClientByKeyPrefix(prefix: string): Promise<ApiClient | null> {
     return this.clientsByPrefix.get(prefix) ?? null;
+  }
+
+  async getClientById(clientId: string): Promise<ApiClient | null> {
+    return this.clients.get(clientId) ?? null;
   }
 
   async updateClientLastUsed(clientId: string, nowMs: number): Promise<void> {
@@ -124,6 +130,48 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
 
   async recordAuditLog(input: AuditLogInput): Promise<void> {
     this.auditLogs.push(input);
+  }
+
+  async claimDuePublications(nowMs: number, leaseDurationMs: number, limit: number): Promise<PublishQueueMessage[]> {
+    const messages: PublishQueueMessage[] = [];
+    const due = [...this.publications.values()]
+      .filter((bundle) => {
+        const publication = bundle.publication;
+        return (
+          ["SCHEDULED", "AWAITING_FOLLOW_UP", "RETRY_SCHEDULED"].includes(publication.status) &&
+          publication.nextActionAtMs !== null &&
+          publication.nextActionAtMs <= nowMs &&
+          (publication.leaseUntilMs === null || publication.leaseUntilMs < nowMs)
+        );
+      })
+      .slice(0, limit);
+
+    for (const bundle of due) {
+      const leaseToken = randomHex(16);
+      const reason =
+        bundle.publication.status === "AWAITING_FOLLOW_UP" ? "FOLLOW_UP" : bundle.publication.status === "RETRY_SCHEDULED" ? "RETRY" : "SCHEDULED";
+      bundle.publication = {
+        ...bundle.publication,
+        status: "QUEUED",
+        leaseToken,
+        leaseUntilMs: nowMs + leaseDurationMs,
+        updatedAtMs: nowMs
+      };
+      messages.push({
+        version: 1,
+        publicationId: bundle.publication.id,
+        revision: bundle.publication.revision,
+        contentHash: bundle.publication.contentHash,
+        leaseToken,
+        reason,
+        enqueuedAtMs: nowMs
+      });
+    }
+    return messages;
+  }
+
+  async updateXAccount(account: XAccount): Promise<void> {
+    this.accounts.set(account.id, account);
   }
 }
 

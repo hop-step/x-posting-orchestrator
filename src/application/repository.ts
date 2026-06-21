@@ -1,6 +1,7 @@
 import type { AuthRepository } from "../domain/auth/authorization";
 import type { ApiClient, ClientAccountPermission, XAccount } from "../domain/auth/types";
 import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord } from "../domain/publications/entities";
+import type { PublishQueueMessage } from "../workers/messages";
 
 export interface IdempotencyRecord {
   clientId: string;
@@ -28,6 +29,7 @@ export interface AuditLogInput {
 }
 
 export interface PublicationRepository extends AuthRepository {
+  getClientById(clientId: string): Promise<ApiClient | null>;
   createPublicationBundle(bundle: PublicationBundle): Promise<void>;
   updatePublicationBundle(bundle: PublicationBundle): Promise<void>;
   getPublicationBundle(id: string): Promise<PublicationBundle | null>;
@@ -39,6 +41,8 @@ export interface PublicationRepository extends AuthRepository {
   completeIdempotencyRecord(clientId: string, key: string, responseStatus: number, responseBody: unknown, nowMs: number): Promise<void>;
   failIdempotencyRecord(clientId: string, key: string, nowMs: number): Promise<void>;
   recordAuditLog(input: AuditLogInput): Promise<void>;
+  claimDuePublications(nowMs: number, leaseDurationMs: number, limit: number): Promise<PublishQueueMessage[]>;
+  updateXAccount(account: XAccount): Promise<void>;
 }
 
 export interface SeedData {

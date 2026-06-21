@@ -5,7 +5,7 @@ import { optionalAuthMiddleware, requireAuthMiddleware } from "./middleware/auth
 import { requestIdMiddleware } from "./middleware/request-id";
 import { healthRoutes } from "./routes/health";
 import { publicationRoutes } from "./routes/publications";
-import { xAccountRoutes } from "./routes/x-accounts";
+import { xAccountRoutes, xOAuthCallbackRoutes } from "./routes/x-accounts";
 import type { AppBindings } from "./context";
 
 export function createApp(): Hono<AppBindings> {
@@ -37,6 +37,7 @@ export function createApp(): Hono<AppBindings> {
     await next();
   });
   app.route("/", healthRoutes());
+  app.route("/", xOAuthCallbackRoutes());
   app.use("/v1/*", optionalAuthMiddleware, requireAuthMiddleware);
   app.route("/", publicationRoutes());
   app.route("/", xAccountRoutes());

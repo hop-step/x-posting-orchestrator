@@ -55,6 +55,11 @@ export class D1AuthRepository implements AuthRepository {
     return row === null ? null : mapClient(row);
   }
 
+  async getClientById(clientId: string): Promise<ApiClient | null> {
+    const row = await this.db.prepare("SELECT * FROM api_clients WHERE id = ?").bind(clientId).first<ApiClientRow>();
+    return row === null ? null : mapClient(row);
+  }
+
   async updateClientLastUsed(clientId: string, nowMs: number): Promise<void> {
     await this.db.prepare("UPDATE api_clients SET last_used_at_ms = ?, updated_at_ms = ? WHERE id = ?").bind(nowMs, nowMs, clientId).run();
   }

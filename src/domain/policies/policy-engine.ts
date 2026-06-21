@@ -12,11 +12,12 @@ export function evaluatePolicy(params: {
   permission: ClientAccountPermission;
   account: XAccount;
   nowMs: number;
+  allowPastScheduledAt?: boolean;
 }): PolicyResult {
   const { request, plans, permission, account, nowMs } = params;
   const reasons: string[] = [];
 
-  if (request.scheduledAtMs <= nowMs) {
+  if (params.allowPastScheduledAt !== true && request.scheduledAtMs <= nowMs) {
     return deny("SCHEDULED_AT_IN_PAST");
   }
   if (permission.permissionLevel === 0) {
