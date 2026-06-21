@@ -1,0 +1,56 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "x-posting-orchestrator",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-21",
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "x-posting-orchestrator",
+      "database_id": "REPLACE_ME",
+      "preview_database_id": "x-posting-orchestrator-local"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "x-posting-media"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "PUBLISH_QUEUE",
+        "queue": "x-publish"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "x-publish",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "x-publish-dlq"
+      }
+    ]
+  },
+  "vars": {
+    "PUBLIC_BASE_URL": "http://localhost:8787",
+    "ALLOWED_CORS_ORIGINS": "",
+    "SCHEDULE_GRACE_SECONDS": "120",
+    "LEASE_DURATION_SECONDS": "120",
+    "DEFAULT_MAX_THREAD_PARTS": "10",
+    "ABSOLUTE_MAX_THREAD_PARTS": "25",
+    "MAX_FOLLOW_UPS": "3",
+    "MAX_IMAGE_BYTES": "5242880",
+    "MAX_IMAGE_COUNT": "4",
+    "IDEMPOTENCY_TTL_HOURS": "24",
+    "OAUTH_STATE_TTL_MINUTES": "10",
+    "TOKEN_REFRESH_MARGIN_MINUTES": "10",
+    "MAX_DELIVERY_ATTEMPTS": "5",
+    "DUPLICATE_CONTENT_WINDOW_HOURS": "24"
+  }
+}

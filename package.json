@@ -1,0 +1,38 @@
+{
+  "name": "x-posting-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "cf-typegen": "wrangler types",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply x-posting-orchestrator --local",
+    "create-api-key": "tsx scripts/create-api-key.ts",
+    "live-x-smoke-test": "tsx scripts/live-x-smoke-test.ts"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.7.0",
+    "drizzle-orm": "^0.44.2",
+    "hono": "^4.8.2",
+    "twitter-text": "^3.1.0",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.61",
+    "@cloudflare/workers-types": "^4.20250620.0",
+    "@eslint/js": "^9.29.0",
+    "@types/node": "^24.0.3",
+    "drizzle-kit": "^0.31.1",
+    "eslint": "^9.29.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.34.1",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.20.0"
+  }
+}
