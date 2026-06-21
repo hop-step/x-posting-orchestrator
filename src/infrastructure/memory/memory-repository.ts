@@ -1,5 +1,6 @@
 import type { AuthRepository } from "../../domain/auth/authorization";
 import type { ApiClient, ClientAccountPermission, XAccount } from "../../domain/auth/types";
+import type { MediaAsset } from "../../domain/media/entities";
 import type { ApprovalRecord, PublicationBundle, PublicationRecord } from "../../domain/publications/entities";
 import type { AuditLogInput, IdempotencyRecord, PublicationRepository, SeedData } from "../../application/repository";
 import { randomHex } from "../../shared/ids";
@@ -12,6 +13,7 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
   readonly permissions = new Map<string, ClientAccountPermission>();
   readonly publications = new Map<string, PublicationBundle>();
   readonly idempotency = new Map<string, IdempotencyRecord>();
+  readonly mediaAssets = new Map<string, MediaAsset>();
   readonly auditLogs: AuditLogInput[] = [];
 
   constructor(seed: SeedData = {}) {
@@ -172,6 +174,14 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
 
   async updateXAccount(account: XAccount): Promise<void> {
     this.accounts.set(account.id, account);
+  }
+
+  async createMediaAsset(asset: MediaAsset): Promise<void> {
+    this.mediaAssets.set(asset.id, asset);
+  }
+
+  async getMediaAsset(id: string): Promise<MediaAsset | null> {
+    return this.mediaAssets.get(id) ?? null;
   }
 }
 

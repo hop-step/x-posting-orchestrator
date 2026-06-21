@@ -27,10 +27,10 @@ describe("scheduler and publisher consumer", () => {
 
     const fakeX = new FakeXAdapter();
     await expect(
-      publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, clock, config: testConfig, message: messages[0] as PublishQueueMessage })
+      publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message: messages[0] as PublishQueueMessage })
     ).resolves.toBe("PUBLISHED");
     await expect(
-      publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, clock, config: testConfig, message: messages[0] as PublishQueueMessage })
+      publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message: messages[0] as PublishQueueMessage })
     ).resolves.toBe("NOOP");
     expect(fakeX.calls).toHaveLength(1);
     expect((await repository.getPublicationBundle(publication.id))?.publication.status).toBe("PUBLISHED");
@@ -50,12 +50,12 @@ describe("scheduler and publisher consumer", () => {
     await repository.updatePublication({ ...bundle.publication, status: "CANCELLED", updatedAtMs: clock.nowMs() });
     const fakeX = new FakeXAdapter();
     await expect(
-      publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, clock, config: testConfig, message: messages[0] as PublishQueueMessage })
+      publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message: messages[0] as PublishQueueMessage })
     ).resolves.toBe("NOOP");
     expect(fakeX.calls).toHaveLength(0);
 
     const staleMessage = { ...(messages[0] as PublishQueueMessage), revision: 999 };
-    await expect(publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, clock, config: testConfig, message: staleMessage })).resolves.toBe(
+    await expect(publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message: staleMessage })).resolves.toBe(
       "NOOP"
     );
   });
@@ -72,6 +72,7 @@ describe("scheduler and publisher consumer", () => {
         repository: rate.repository,
         xClient: new FakeXAdapter([{ type: "RATE_LIMITED", retryAtMs: rate.clock.nowMs() + 60_000, httpStatus: 429, errorCode: "X_RATE_LIMITED", error: {} }]),
         tokenManager: null,
+        mediaBucket: null,
         clock: rate.clock,
         config: testConfig,
         message: rateMsg
@@ -87,6 +88,7 @@ describe("scheduler and publisher consumer", () => {
         repository: failure.repository,
         xClient: new FakeXAdapter([{ type: "DEFINITE_FAILURE", httpStatus: 400, errorCode: "X_HTTP_400", error: {} }]),
         tokenManager: null,
+        mediaBucket: null,
         clock: failure.clock,
         config: testConfig,
         message: failureMsg
@@ -100,10 +102,10 @@ describe("scheduler and publisher consumer", () => {
     const unknownMsg = (await unknown.repository.claimDuePublications(unknown.clock.nowMs(), 120_000, 10))[0] as PublishQueueMessage;
     const fakeX = new FakeXAdapter([{ type: "DELIVERY_UNKNOWN", errorCode: "X_TIMEOUT", error: {} }]);
     await expect(
-      publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, clock: unknown.clock, config: testConfig, message: unknownMsg })
+      publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock: unknown.clock, config: testConfig, message: unknownMsg })
     ).resolves.toBe("DELIVERY_UNKNOWN");
     await expect(
-      publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, clock: unknown.clock, config: testConfig, message: unknownMsg })
+      publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock: unknown.clock, config: testConfig, message: unknownMsg })
     ).resolves.toBe("NOOP");
     expect(fakeX.calls).toHaveLength(1);
   });

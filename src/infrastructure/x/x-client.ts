@@ -9,6 +9,19 @@ export interface CreatePostInput {
   accessToken: string | null;
 }
 
+export interface UploadMediaInput {
+  bytes: Uint8Array;
+  mimeType: string;
+  altText: string | null;
+  aiGenerated: boolean;
+  accessToken: string | null;
+}
+
+export interface UploadMediaSuccess {
+  type: "SUCCESS";
+  mediaId: string;
+}
+
 export interface CreatePostSuccess {
   type: "SUCCESS";
   xPostId: string;
@@ -50,6 +63,13 @@ export type CreatePostResult =
   | XFallbackEligibleFailure
   | XDeliveryUnknown;
 
+export type UploadMediaResult =
+  | UploadMediaSuccess
+  | XRateLimited
+  | XDefiniteFailure
+  | XDeliveryUnknown;
+
 export interface XClient {
+  uploadMedia(input: UploadMediaInput): Promise<UploadMediaResult>;
   createPost(input: CreatePostInput): Promise<CreatePostResult>;
 }

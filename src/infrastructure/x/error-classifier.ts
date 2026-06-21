@@ -1,4 +1,4 @@
-import type { CreatePostResult } from "./x-client";
+import type { CreatePostResult, XDeliveryUnknown } from "./x-client";
 
 export function classifyCreatePostResponse(response: Response, body: unknown, nowMs: number): CreatePostResult {
   if (response.ok) {
@@ -52,7 +52,7 @@ export function classifyCreatePostResponse(response: Response, body: unknown, no
   };
 }
 
-export function classifyNetworkError(error: unknown): CreatePostResult {
+export function classifyNetworkError(error: unknown): XDeliveryUnknown {
   return {
     type: "DELIVERY_UNKNOWN",
     errorCode: "X_NETWORK_UNKNOWN",

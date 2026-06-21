@@ -34,6 +34,7 @@ export default {
         repository,
         xClient,
         tokenManager,
+        mediaBucket: env.MEDIA_BUCKET,
         clock: systemClock,
         config: loadConfig(env),
         message: message.body

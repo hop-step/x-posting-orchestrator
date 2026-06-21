@@ -1,5 +1,6 @@
 import type { AuthRepository } from "../domain/auth/authorization";
 import type { ApiClient, ClientAccountPermission, XAccount } from "../domain/auth/types";
+import type { MediaAsset } from "../domain/media/entities";
 import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord } from "../domain/publications/entities";
 import type { PublishQueueMessage } from "../workers/messages";
 
@@ -43,6 +44,8 @@ export interface PublicationRepository extends AuthRepository {
   recordAuditLog(input: AuditLogInput): Promise<void>;
   claimDuePublications(nowMs: number, leaseDurationMs: number, limit: number): Promise<PublishQueueMessage[]>;
   updateXAccount(account: XAccount): Promise<void>;
+  createMediaAsset(asset: MediaAsset): Promise<void>;
+  getMediaAsset(id: string): Promise<MediaAsset | null>;
 }
 
 export interface SeedData {

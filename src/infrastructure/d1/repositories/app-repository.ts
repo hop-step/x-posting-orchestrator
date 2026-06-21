@@ -1,6 +1,7 @@
 import { D1AuthRepository } from "./auth-repository";
 import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord, PublicationStepPlan } from "../../../domain/publications/entities";
 import type { AuditLogInput, IdempotencyRecord, PublicationRepository } from "../../../application/repository";
+import type { MediaAsset } from "../../../domain/media/entities";
 import type { XAccount } from "../../../domain/auth/types";
 import { randomHex } from "../../../shared/ids";
 import type { PublishQueueMessage } from "../../../workers/messages";
@@ -94,6 +95,23 @@ interface IdempotencyRow {
   response_status: number | null;
   response_body_json: string | null;
   expires_at_ms: number;
+  created_at_ms: number;
+  updated_at_ms: number;
+}
+
+interface MediaAssetRow {
+  id: string;
+  x_account_id: string;
+  created_by_client_id: string;
+  r2_key: string;
+  original_filename: string | null;
+  mime_type: MediaAsset["mimeType"];
+  size_bytes: number;
+  sha256: string;
+  alt_text: string | null;
+  ai_generated: number;
+  status: MediaAsset["status"];
+  expires_at_ms: number | null;
   created_at_ms: number;
   updated_at_ms: number;
 }
@@ -310,6 +328,38 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
         account.id
       )
       .run();
+  }
+
+  async createMediaAsset(asset: MediaAsset): Promise<void> {
+    await this.database
+      .prepare(
+        `INSERT INTO media_assets
+        (id, x_account_id, created_by_client_id, r2_key, original_filename, mime_type, size_bytes, sha256,
+         alt_text, ai_generated, status, expires_at_ms, created_at_ms, updated_at_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        asset.id,
+        asset.xAccountId,
+        asset.createdByClientId,
+        asset.r2Key,
+        asset.originalFilename,
+        asset.mimeType,
+        asset.sizeBytes,
+        asset.sha256,
+        asset.altText,
+        asset.aiGenerated ? 1 : 0,
+        asset.status,
+        asset.expiresAtMs,
+        asset.createdAtMs,
+        asset.updatedAtMs
+      )
+      .run();
+  }
+
+  async getMediaAsset(id: string): Promise<MediaAsset | null> {
+    const row = await this.database.prepare("SELECT * FROM media_assets WHERE id = ?").bind(id).first<MediaAssetRow>();
+    return row === null ? null : mapMediaAsset(row);
   }
 
   private insertPublication(record: PublicationRecord): D1PreparedStatement {
@@ -568,6 +618,25 @@ function mapIdempotency(row: IdempotencyRow): IdempotencyRecord {
     status: row.status,
     responseStatus: row.response_status,
     responseBody: row.response_body_json === null ? null : JSON.parse(row.response_body_json),
+    expiresAtMs: row.expires_at_ms,
+    createdAtMs: row.created_at_ms,
+    updatedAtMs: row.updated_at_ms
+  };
+}
+
+function mapMediaAsset(row: MediaAssetRow): MediaAsset {
+  return {
+    id: row.id,
+    xAccountId: row.x_account_id,
+    createdByClientId: row.created_by_client_id,
+    r2Key: row.r2_key,
+    originalFilename: row.original_filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    sha256: row.sha256,
+    altText: row.alt_text,
+    aiGenerated: row.ai_generated === 1,
+    status: row.status,
     expiresAtMs: row.expires_at_ms,
     createdAtMs: row.created_at_ms,
     updatedAtMs: row.updated_at_ms
