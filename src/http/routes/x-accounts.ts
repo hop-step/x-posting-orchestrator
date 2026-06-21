@@ -15,6 +15,11 @@ const createAccountSchema = z.object({
   xUsername: z.string().min(1).optional()
 });
 
+const capabilitySchema = z.object({
+  longformCapability: z.enum(["UNKNOWN", "ENABLED", "DISABLED"]).optional(),
+  selfReplyCapability: z.enum(["UNVERIFIED", "ENABLED", "DISABLED"]).optional()
+});
+
 export function xAccountRoutes(): Hono<AppBindings> {
   const app = new Hono<AppBindings>();
 
@@ -124,6 +129,70 @@ export function xAccountRoutes(): Hono<AppBindings> {
     authorizeUrl.searchParams.set("code_challenge", codeChallenge);
     authorizeUrl.searchParams.set("code_challenge_method", "S256");
     return c.redirect(authorizeUrl.toString(), 302);
+  });
+
+  app.post("/v1/x/accounts/:id/disable", async (c) => {
+    const auth = c.get("auth");
+    if (auth === null) {
+      throw new Error("auth middleware missing");
+    }
+    assertScope(auth.client.scopes, "account:manage", auth.client.actorType);
+    const repository = new D1AppRepository(c.env.DB);
+    const account = await repository.getXAccount(c.req.param("id"));
+    if (account === null) {
+      throw badRequest("X_ACCOUNT_NOT_FOUND", "X account does not exist.");
+    }
+    const updated = { ...account, status: "DISABLED" as const, updatedAtMs: Date.now() };
+    await repository.updateXAccount(updated);
+    await repository.recordAuditLog({
+      eventType: "X_ACCOUNT_DISABLED",
+      actorClientId: auth.client.id,
+      xAccountId: updated.id,
+      publicationId: null,
+      requestId: c.get("requestId"),
+      contentHash: null,
+      metadata: {},
+      createdAtMs: updated.updatedAtMs
+    });
+    return c.json({ account: updated });
+  });
+
+  app.patch("/v1/x/accounts/:id/capabilities", async (c) => {
+    const auth = c.get("auth");
+    if (auth === null) {
+      throw new Error("auth middleware missing");
+    }
+    assertScope(auth.client.scopes, "account:manage", auth.client.actorType);
+    const parsed = capabilitySchema.safeParse(await readJson(c.req.raw));
+    if (!parsed.success) {
+      throw badRequest("INVALID_CAPABILITY_REQUEST", "Capability request is invalid.", { issues: parsed.error.issues });
+    }
+    const repository = new D1AppRepository(c.env.DB);
+    const account = await repository.getXAccount(c.req.param("id"));
+    if (account === null) {
+      throw badRequest("X_ACCOUNT_NOT_FOUND", "X account does not exist.");
+    }
+    const updated = {
+      ...account,
+      longformCapability: parsed.data.longformCapability ?? account.longformCapability,
+      selfReplyCapability: parsed.data.selfReplyCapability ?? account.selfReplyCapability,
+      updatedAtMs: Date.now()
+    };
+    await repository.updateXAccount(updated);
+    await repository.recordAuditLog({
+      eventType: "CAPABILITY_UPDATED",
+      actorClientId: auth.client.id,
+      xAccountId: updated.id,
+      publicationId: null,
+      requestId: c.get("requestId"),
+      contentHash: null,
+      metadata: {
+        longformCapability: updated.longformCapability,
+        selfReplyCapability: updated.selfReplyCapability
+      },
+      createdAtMs: updated.updatedAtMs
+    });
+    return c.json({ account: updated });
   });
 
   return app;

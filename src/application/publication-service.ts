@@ -338,6 +338,110 @@ export class PublicationService {
     });
   }
 
+  async retry(id: string, client: ApiClient, idempotencyKey: string | null, requestMeta: RequestMeta): Promise<IdempotentResult> {
+    return runIdempotent({
+      repository: this.deps.repository,
+      clock: this.deps.clock,
+      ttlHours: this.deps.config.idempotencyTtlHours,
+      clientId: client.id,
+      key: idempotencyKey,
+      method: requestMeta.method,
+      path: requestMeta.path,
+      requestBody: {},
+      handler: async () => {
+        assertScope(client.scopes, "publication:retry", client.actorType);
+        if (client.actorType === "AI") {
+          throw forbidden("AI_RETRY_FORBIDDEN", "AI actors cannot retry publication delivery.");
+        }
+        const bundle = await this.getAccessible(id, client, "publication:retry");
+        if (bundle.publication.status === "DELIVERY_UNKNOWN") {
+          throw conflict("DELIVERY_UNKNOWN_RETRY_FORBIDDEN", "Delivery unknown publications require human reconciliation before retry.");
+        }
+        if (bundle.publication.status !== "FAILED" && bundle.publication.status !== "PARTIALLY_PUBLISHED") {
+          throw conflict("PUBLICATION_NOT_RETRYABLE", "Only definite failures can be retried.", { status: bundle.publication.status });
+        }
+        const nowMs = this.deps.clock.nowMs();
+        const publication: PublicationRecord = {
+          ...bundle.publication,
+          status: "RETRY_SCHEDULED",
+          nextActionAtMs: nowMs,
+          leaseToken: null,
+          leaseUntilMs: null,
+          updatedAtMs: nowMs
+        };
+        await this.deps.repository.updatePublication(publication);
+        await this.audit("PUBLICATION_RETRY_SCHEDULED", client.id, publication, requestMeta.requestId, {});
+        return { status: 200, body: { publication: toPublicationSummary(publication) } };
+      }
+    });
+  }
+
+  async reconcile(
+    id: string,
+    input: { stepId: string; outcome: "PUBLISHED" | "NOT_PUBLISHED"; xPostId?: string | undefined; comment?: string | undefined },
+    client: ApiClient,
+    idempotencyKey: string | null,
+    requestMeta: RequestMeta
+  ): Promise<IdempotentResult> {
+    return runIdempotent({
+      repository: this.deps.repository,
+      clock: this.deps.clock,
+      ttlHours: this.deps.config.idempotencyTtlHours,
+      clientId: client.id,
+      key: idempotencyKey,
+      method: requestMeta.method,
+      path: requestMeta.path,
+      requestBody: input,
+      handler: async () => {
+        assertScope(client.scopes, "publication:reconcile", client.actorType);
+        if (client.actorType !== "HUMAN") {
+          throw forbidden("HUMAN_RECONCILE_REQUIRED", "Only human actors can reconcile delivery unknown publications.");
+        }
+        const bundle = await this.getAccessible(id, client, "publication:reconcile");
+        if (bundle.publication.status !== "DELIVERY_UNKNOWN") {
+          throw conflict("PUBLICATION_NOT_DELIVERY_UNKNOWN", "Only DELIVERY_UNKNOWN publications can be reconciled.");
+        }
+        const step = bundle.plans.flatMap((plan) => plan.steps).find((candidate) => candidate.id === input.stepId);
+        if (step === undefined) {
+          throw notFound("STEP_NOT_FOUND", "Publication step was not found.");
+        }
+        const nowMs = this.deps.clock.nowMs();
+        if (input.outcome === "PUBLISHED") {
+          if (input.xPostId === undefined || input.xPostId.trim() === "") {
+            throw unprocessable("X_POST_ID_REQUIRED", "xPostId is required when reconciling as published.");
+          }
+          step.status = "PUBLISHED";
+          step.xPostId = input.xPostId;
+          step.publishedAtMs = nowMs;
+        } else {
+          step.status = "FAILED";
+          step.lastErrorCode = "RECONCILED_NOT_PUBLISHED";
+          step.lastError = { comment: input.comment ?? null };
+        }
+        const remainingUnknown = bundle.plans.some((plan) => plan.steps.some((candidate) => candidate.status === "DELIVERY_UNKNOWN"));
+        const remainingUnpublished = bundle.plans.some((plan) => plan.steps.some((candidate) => candidate.stepType === "MAIN" && candidate.xPostId === null));
+        const status = input.outcome === "PUBLISHED" && !remainingUnknown && !remainingUnpublished ? "PUBLISHED" : "FAILED";
+        const publication: PublicationRecord = {
+          ...bundle.publication,
+          status,
+          nextActionAtMs: null,
+          leaseToken: null,
+          leaseUntilMs: null,
+          completedAtMs: status === "PUBLISHED" ? nowMs : bundle.publication.completedAtMs,
+          failureCode: status === "FAILED" ? "RECONCILED_NOT_PUBLISHED" : null,
+          failure: status === "FAILED" ? { comment: input.comment ?? null } : null,
+          updatedAtMs: nowMs
+        };
+        await this.deps.repository.updatePublicationBundle({ ...bundle, publication });
+        await this.audit("PUBLICATION_RECONCILED", client.id, publication, requestMeta.requestId, {
+          stepId: input.stepId,
+          outcome: input.outcome
+        });
+        return { status: 200, body: { publication: toPublicationSummary(publication) } };
+      }
+    });
+  }
+
   private async transitionFromDraft(
     id: string,
     client: ApiClient,

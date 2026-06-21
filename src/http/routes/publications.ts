@@ -23,6 +23,13 @@ const rejectBodySchema = z.object({
   reason: z.string().max(1000).optional()
 });
 
+const reconcileBodySchema = z.object({
+  stepId: z.string().min(1),
+  outcome: z.enum(["PUBLISHED", "NOT_PUBLISHED"]),
+  xPostId: z.string().min(1).optional(),
+  comment: z.string().max(1000).optional()
+});
+
 export function publicationRoutes(): Hono<AppBindings> {
   const app = new Hono<AppBindings>();
 
@@ -103,6 +110,24 @@ export function publicationRoutes(): Hono<AppBindings> {
     const auth = requireRouteAuth(c);
     const service = serviceFor(c);
     const result = await service.cancel(c.req.param("id"), auth.client, c.req.header("Idempotency-Key") ?? null, requestMeta(c));
+    return json(result.body, result.status);
+  });
+
+  app.post("/v1/publications/:id/retry", async (c) => {
+    const auth = requireRouteAuth(c);
+    const service = serviceFor(c);
+    const result = await service.retry(c.req.param("id"), auth.client, c.req.header("Idempotency-Key") ?? null, requestMeta(c));
+    return json(result.body, result.status);
+  });
+
+  app.post("/v1/publications/:id/reconcile", async (c) => {
+    const auth = requireRouteAuth(c);
+    const service = serviceFor(c);
+    const parsed = reconcileBodySchema.safeParse(await readJson(c.req.raw));
+    if (!parsed.success) {
+      throw badRequest("INVALID_RECONCILE_REQUEST", "Reconcile request is invalid.", { issues: parsed.error.issues });
+    }
+    const result = await service.reconcile(c.req.param("id"), parsed.data, auth.client, c.req.header("Idempotency-Key") ?? null, requestMeta(c));
     return json(result.body, result.status);
   });
 
