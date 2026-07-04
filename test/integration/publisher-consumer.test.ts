@@ -24,6 +24,9 @@ describe("scheduler and publisher consumer", () => {
     });
     expect(messages).toHaveLength(1);
     expect(sent[0]?.publicationId).toBe(publication.id);
+    expect(repository.auditLogs.map((log) => log.eventType)).toEqual(
+      expect.arrayContaining(["PUBLICATION_QUEUE_CLAIMED", "PUBLICATION_QUEUED"])
+    );
 
     const fakeX = new FakeXAdapter();
     await expect(
@@ -34,6 +37,56 @@ describe("scheduler and publisher consumer", () => {
     ).resolves.toBe("NOOP");
     expect(fakeX.calls).toHaveLength(1);
     expect((await repository.getPublicationBundle(publication.id))?.publication.status).toBe("PUBLISHED");
+  });
+
+  it("recovers an expired queued publication when queue delivery did not start", async () => {
+    const serviceClient = client("svc", "SERVICE");
+    const { service, repository, clock } = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });
+    const created = await service.create(baseRequest(), serviceClient, "idem-create", requestMeta());
+    const publication = (created.body as { publication: { id: string } }).publication;
+    clock.set(Date.parse(scheduledAt));
+
+    await expect(
+      enqueueDuePublications({
+        repository,
+        queue: { send: async () => Promise.reject(new Error("queue unavailable")) } as unknown as Queue<PublishQueueMessage>,
+        clock,
+        config: testConfig
+      })
+    ).rejects.toThrow("queue unavailable");
+    const stuck = await repository.getPublicationBundle(publication.id);
+    expect(stuck?.publication.status).toBe("QUEUED");
+    expect(repository.auditLogs.map((log) => log.eventType)).toEqual(
+      expect.arrayContaining(["PUBLICATION_QUEUE_CLAIMED", "PUBLICATION_QUEUE_SEND_FAILED"])
+    );
+
+    expect(await repository.claimDuePublications(clock.nowMs() + 119_000, 120_000, 10)).toHaveLength(0);
+    clock.advance(121_000);
+    const recoveredSent: PublishQueueMessage[] = [];
+    const recovered = await enqueueDuePublications({
+      repository,
+      queue: { send: async (message: PublishQueueMessage) => void recoveredSent.push(message) } as unknown as Queue<PublishQueueMessage>,
+      clock,
+      config: testConfig
+    });
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.reason).toBe("RECOVERY");
+    expect(recoveredSent[0]?.publicationId).toBe(publication.id);
+    expect(repository.auditLogs.some((log) => log.eventType === "PUBLICATION_QUEUED" && log.metadata.reason === "RECOVERY")).toBe(true);
+
+    const fakeX = new FakeXAdapter();
+    await expect(
+      publishQueueMessage({
+        repository,
+        xClient: fakeX,
+        tokenManager: null,
+        mediaBucket: null,
+        clock,
+        config: testConfig,
+        message: recovered[0] as PublishQueueMessage
+      })
+    ).resolves.toBe("PUBLISHED");
+    expect(fakeX.calls).toHaveLength(1);
   });
 
   it("no-ops cancelled publications and old revision messages", async () => {

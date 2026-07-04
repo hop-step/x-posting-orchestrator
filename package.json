@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply x-posting-orchestrator --local",
+    "init-api-key-pepper": "tsx scripts/init-api-key-pepper.ts",
     "create-api-key": "tsx scripts/create-api-key.ts",
+    "create-remote-api-client": "tsx scripts/create-remote-api-client.ts",
     "live-x-smoke-test": "tsx scripts/live-x-smoke-test.ts"
   },
   "dependencies": {

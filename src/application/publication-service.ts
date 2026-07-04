@@ -367,6 +367,8 @@ export class PublicationService {
           nextActionAtMs: nowMs,
           leaseToken: null,
           leaseUntilMs: null,
+          failureCode: null,
+          failure: null,
           updatedAtMs: nowMs
         };
         await this.deps.repository.updatePublication(publication);
@@ -614,12 +616,14 @@ function stripRequestForPatch(request: PublicationRequest): Record<string, unkno
   return {
     xAccountId: request.xAccountId,
     scheduledAt: request.scheduledAt,
+    replyToPostId: request.replyToPostId,
     kind: request.kind,
     content: request.content,
     overflowPolicy: request.overflowPolicy,
     threadOptions: request.threadOptions,
     followUps: request.followUps,
-    approvalPreference: request.approvalPreference
+    approvalPreference: request.approvalPreference,
+    memo: request.memo
   };
 }
 

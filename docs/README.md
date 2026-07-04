@@ -8,8 +8,9 @@
 
 1. [共通: 基本概念](./common/concepts.md)
 2. [共通: 状態と安全ルール](./common/status-and-safety.md)
-3. 利用者の場合: [投稿依頼の始め方](./user/getting-started.md)
-4. 管理者の場合: [管理者セットアップ](./admin/setup.md)
+3. AIエージェントの場合: [AI向けAPI利用ガイド](./ai/use-case-guide.md)
+4. 利用者の場合: [投稿依頼の始め方](./user/getting-started.md)
+5. 管理者の場合: [管理者セットアップ](./admin/setup.md)
 
 ## 読者別
 
@@ -22,6 +23,12 @@
 - [承認フロー](./user/approval-flow.md)
 - [画像・投票・スレッド](./user/media-polls-threads.md)
 - [エラーと再実行](./user/errors-and-retry.md)
+
+### AIエージェント向け
+
+APIを呼び出すAIが、ユースケースごとに何を確認し、次に何をすべきか判断するための手順書です。
+
+- [AI向けAPI利用ガイド](./ai/use-case-guide.md)
 
 ### 管理者向け
 

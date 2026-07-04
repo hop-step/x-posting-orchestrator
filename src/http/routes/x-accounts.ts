@@ -4,15 +4,27 @@ import { assertScope } from "../../domain/auth/api-keys";
 import { D1AppRepository } from "../../infrastructure/d1/repositories/app-repository";
 import { encryptToken, decryptToken } from "../../infrastructure/crypto/token-crypto";
 import { hmacSha256Hex } from "../../shared/crypto";
-import { badRequest, unprocessable } from "../../shared/errors";
+import { badRequest, conflict, unprocessable } from "../../shared/errors";
 import { randomHex } from "../../shared/ids";
 import type { AppBindings } from "../context";
+
+const blockingDeletionStatuses = [
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "SCHEDULED",
+  "QUEUED",
+  "PUBLISHING",
+  "AWAITING_FOLLOW_UP",
+  "RETRY_SCHEDULED",
+  "DELIVERY_UNKNOWN"
+];
 
 const createAccountSchema = z.object({
   id: z.string().min(1).optional(),
   name: z.string().min(1),
   xUserId: z.string().min(1).optional(),
-  xUsername: z.string().min(1).optional()
+  xUsername: z.string().min(1).optional(),
+  permissionLevel: z.number().int().min(0).max(3).optional().default(3)
 });
 
 const capabilitySchema = z.object({
@@ -35,21 +47,57 @@ export function xAccountRoutes(): Hono<AppBindings> {
     }
     const nowMs = Date.now();
     const id = parsed.data.id ?? `acc_${randomHex(8)}`;
-    await c.env.DB.prepare(
-      `INSERT INTO x_accounts
-       (id, name, x_user_id, x_username, status, longform_capability, self_reply_capability, scopes_json, created_at_ms, updated_at_ms)
-       VALUES (?, ?, ?, ?, 'AUTH_ERROR', 'UNKNOWN', 'UNVERIFIED', '[]', ?, ?)`
-    )
-      .bind(id, parsed.data.name, parsed.data.xUserId ?? null, parsed.data.xUsername ?? null, nowMs, nowMs)
-      .run();
-    await c.env.DB.prepare(
-      `INSERT INTO audit_logs
-       (id, event_type, actor_client_id, x_account_id, publication_id, request_id, content_hash, metadata_json, created_at_ms)
-       VALUES (?, 'X_ACCOUNT_CONNECTED', ?, ?, NULL, ?, NULL, '{}', ?)`
-    )
-      .bind(crypto.randomUUID(), auth.client.id, id, c.get("requestId"), nowMs)
-      .run();
-    return c.json({ account: { id, name: parsed.data.name, status: "AUTH_ERROR" } }, 201);
+    await c.env.DB.batch([
+      c.env.DB
+        .prepare(
+          `INSERT INTO x_accounts
+           (id, name, x_user_id, x_username, status, longform_capability, self_reply_capability, scopes_json, created_at_ms, updated_at_ms)
+           VALUES (?, ?, ?, ?, 'AUTH_ERROR', 'UNKNOWN', 'UNVERIFIED', '[]', ?, ?)`
+        )
+        .bind(id, parsed.data.name, parsed.data.xUserId ?? null, parsed.data.xUsername ?? null, nowMs, nowMs),
+      c.env.DB
+        .prepare(
+          `INSERT INTO client_account_permissions
+           (client_id, x_account_id, permission_level, policy_id, max_thread_parts, allowed_hours_json, created_at_ms, updated_at_ms)
+           VALUES (?, ?, ?, NULL, 10, NULL, ?, ?)
+           ON CONFLICT(client_id, x_account_id) DO UPDATE SET
+             permission_level = excluded.permission_level,
+             max_thread_parts = excluded.max_thread_parts,
+             updated_at_ms = excluded.updated_at_ms`
+        )
+        .bind(auth.client.id, id, parsed.data.permissionLevel, nowMs, nowMs),
+      c.env.DB
+        .prepare(
+          `INSERT INTO audit_logs
+           (id, event_type, actor_client_id, x_account_id, publication_id, request_id, content_hash, metadata_json, created_at_ms)
+           VALUES (?, 'X_ACCOUNT_REGISTERED', ?, ?, NULL, ?, NULL, ?, ?)`
+        )
+        .bind(
+          crypto.randomUUID(),
+          auth.client.id,
+          id,
+          c.get("requestId"),
+          JSON.stringify({ permissionLevel: parsed.data.permissionLevel }),
+          nowMs
+        )
+    ]);
+    return c.json(
+      {
+        account: {
+          id,
+          name: parsed.data.name,
+          xUserId: parsed.data.xUserId ?? null,
+          xUsername: parsed.data.xUsername ?? null,
+          status: "AUTH_ERROR"
+        },
+        permission: {
+          clientId: auth.client.id,
+          xAccountId: id,
+          permissionLevel: parsed.data.permissionLevel
+        }
+      },
+      201
+    );
   });
 
   app.get("/v1/x/accounts", async (c) => {
@@ -128,6 +176,9 @@ export function xAccountRoutes(): Hono<AppBindings> {
     authorizeUrl.searchParams.set("state", state);
     authorizeUrl.searchParams.set("code_challenge", codeChallenge);
     authorizeUrl.searchParams.set("code_challenge_method", "S256");
+    if (c.req.query("response") === "json") {
+      return c.json({ authorizeUrl: authorizeUrl.toString() });
+    }
     return c.redirect(authorizeUrl.toString(), 302);
   });
 
@@ -155,6 +206,55 @@ export function xAccountRoutes(): Hono<AppBindings> {
       createdAtMs: updated.updatedAtMs
     });
     return c.json({ account: updated });
+  });
+
+  app.delete("/v1/x/accounts/:id", async (c) => {
+    const auth = c.get("auth");
+    if (auth === null) {
+      throw new Error("auth middleware missing");
+    }
+    assertScope(auth.client.scopes, "account:manage", auth.client.actorType);
+    const id = c.req.param("id");
+    const repository = new D1AppRepository(c.env.DB);
+    const account = await repository.getXAccount(id);
+    if (account === null) {
+      throw badRequest("X_ACCOUNT_NOT_FOUND", "X account does not exist.");
+    }
+    const blocking = await c.env.DB.prepare(
+      `SELECT status, COUNT(*) AS count
+       FROM publications
+       WHERE x_account_id = ?
+         AND status IN (${blockingDeletionStatuses.map(() => "?").join(", ")})
+       GROUP BY status`
+    )
+      .bind(id, ...blockingDeletionStatuses)
+      .all<{ status: string; count: number }>();
+    if (blocking.results.length > 0) {
+      throw conflict("X_ACCOUNT_HAS_ACTIVE_PUBLICATIONS", "X account has active publications and cannot be deleted.", {
+        statuses: blocking.results
+      });
+    }
+    const nowMs = Date.now();
+    await c.env.DB.batch([
+      c.env.DB.prepare("DELETE FROM client_account_permissions WHERE x_account_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM oauth_states WHERE x_account_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM x_accounts WHERE id = ?").bind(id),
+      c.env.DB
+        .prepare(
+          `INSERT INTO audit_logs
+           (id, event_type, actor_client_id, x_account_id, publication_id, request_id, content_hash, metadata_json, created_at_ms)
+           VALUES (?, 'X_ACCOUNT_DELETED', ?, ?, NULL, ?, NULL, ?, ?)`
+        )
+        .bind(
+          crypto.randomUUID(),
+          auth.client.id,
+          id,
+          c.get("requestId"),
+          JSON.stringify({ name: account.name, previousStatus: account.status }),
+          nowMs
+        )
+    ]);
+    return c.json({ account: { id, status: "DELETED" } });
   });
 
   app.patch("/v1/x/accounts/:id/capabilities", async (c) => {
@@ -280,7 +380,10 @@ export function xOAuthCallbackRoutes(): Hono<AppBindings> {
          VALUES (?, 'X_ACCOUNT_CONNECTED', NULL, ?, NULL, ?, NULL, '{}', ?)`
       ).bind(crypto.randomUUID(), row.x_account_id, c.get("requestId"), nowMs)
     ]);
-    return c.json({ ok: true, xAccountId: row.x_account_id });
+    const redirectUrl = new URL("/admin", c.req.url);
+    redirectUrl.searchParams.set("oauth", "success");
+    redirectUrl.searchParams.set("xAccountId", row.x_account_id);
+    return c.redirect(redirectUrl.toString(), 302);
   });
 
   return app;

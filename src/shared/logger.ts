@@ -17,6 +17,19 @@ export const consoleLogger: Logger = {
   }
 };
 
+export function errorMetadata(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message
+    };
+  }
+  return {
+    name: typeof error,
+    message: String(error)
+  };
+}
+
 export function redact(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => redact(item));

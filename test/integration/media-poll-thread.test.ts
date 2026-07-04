@@ -105,6 +105,30 @@ describe("media, poll follow-up, and thread publishing", () => {
     expect(retryFake.calls).toHaveLength(1);
     expect(retryFake.calls[0]?.replyToPostId).toBe("root-post");
   });
+
+  it("publishes a scheduled text post as a reply to an existing X post ID", async () => {
+    const serviceClient = client("svc", "SERVICE");
+    const { service, repository, clock } = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });
+    const created = await service.create(
+      baseRequest({
+        replyToPostId: "2072314870444540211",
+        content: { text: "【誤】が正しい！\n\n【解説】\n局所への穏やかな刺激によって痒みを抑える効果を期待して、熱感刺激を生じさせるクロタミトンが配合されている場合がある。" }
+      }),
+      serviceClient,
+      "idem-external-reply",
+      requestMeta()
+    );
+    const publication = (created.body as { publication: { id: string; status: string } }).publication;
+    expect(publication.status).toBe("SCHEDULED");
+    clock.set(Date.parse(scheduledAt));
+    const message = (await repository.claimDuePublications(clock.nowMs(), 120_000, 10))[0] as PublishQueueMessage;
+    const fakeX = new FakeXAdapter();
+    await expect(
+      publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message })
+    ).resolves.toBe("PUBLISHED");
+    expect(fakeX.calls).toHaveLength(1);
+    expect(fakeX.calls[0]?.replyToPostId).toBe("2072314870444540211");
+  });
 });
 
 function mediaAsset(clientId: string): MediaAsset {

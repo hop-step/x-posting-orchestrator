@@ -31,6 +31,7 @@ export async function contentHashForApproval(params: {
   return sha256Canonical({
     xAccountId: params.xAccountId,
     scheduledAtMs: params.scheduledAtMs,
+    replyToPostId: params.request.replyToPostId,
     normalizedText: params.request.content.text,
     mediaIds: params.request.content.mediaIds,
     poll: params.request.content.poll,

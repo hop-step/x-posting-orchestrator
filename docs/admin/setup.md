@@ -39,8 +39,15 @@ wrangler d1 migrations apply x-posting-orchestrator --remote
 
 ## 4. Worker Secretsを登録する
 
+`API_KEY_PEPPER` は初回セットアップコマンドで生成して登録できます。
+
 ```bash
-wrangler secret put API_KEY_PEPPER
+pnpm init-api-key-pepper
+```
+
+このコマンドは `.secrets/api-key-pepper` に同じ値を保存します。Cloudflare側に既に `API_KEY_PEPPER` があり、ローカル値がない場合は、既存API Clientを壊さないため上書きせず停止します。
+
+```bash
 wrangler secret put TOKEN_ENCRYPTION_KEY_V1
 wrangler secret put X_CLIENT_ID
 wrangler secret put X_CLIENT_SECRET
@@ -77,6 +84,18 @@ APIキーを生成します。
 
 ```bash
 API_KEY_PEPPER=<same-secret> pnpm create-api-key SERVICE "ops-client"
+```
+
+`.secrets/api-key-pepper` がある場合は環境変数を省略できます。
+
+```bash
+pnpm create-api-key SERVICE "ops-client"
+```
+
+本番稼働後に外部AI用Clientを追加する場合は、管理用APIキーで本番Workerに発行させます。
+
+```bash
+X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id acc_xxx
 ```
 
 出力される値:

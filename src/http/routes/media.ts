@@ -3,7 +3,7 @@ import { authorizeAccount } from "../../domain/auth/authorization";
 import { validateImageBytes } from "../../domain/media/media-validator";
 import { loadConfig } from "../../env";
 import { D1AppRepository } from "../../infrastructure/d1/repositories/app-repository";
-import { badRequest, forbidden, notFound } from "../../shared/errors";
+import { badRequest, forbidden, notFound, serviceUnavailable } from "../../shared/errors";
 import { randomHex } from "../../shared/ids";
 import type { AppBindings } from "../context";
 
@@ -29,6 +29,9 @@ export function mediaRoutes(): Hono<AppBindings> {
     const mediaId = `media_${randomHex(8)}`;
     const r2Key = `${xAccountId}/${mediaId}`;
     const altTextValue = form.get("altText");
+    if (c.env.MEDIA_BUCKET === undefined) {
+      throw serviceUnavailable("MEDIA_BUCKET_UNAVAILABLE", "Media uploads are disabled because MEDIA_BUCKET is not configured.");
+    }
     await c.env.MEDIA_BUCKET.put(r2Key, bytes, {
       httpMetadata: {
         contentType: validated.mimeType

@@ -1,8 +1,14 @@
 import { classifyCreatePostResponse, classifyNetworkError } from "./error-classifier";
 import type { CreatePostInput, CreatePostResult, UploadMediaInput, UploadMediaResult, XClient } from "./x-client";
 
+type Fetcher = (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => Promise<Response>;
+
 export class XRestAdapter implements XClient {
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  private readonly fetcher: Fetcher;
+
+  constructor(fetcher?: Fetcher) {
+    this.fetcher = fetcher ?? ((input, init) => fetch(input, init));
+  }
 
   async uploadMedia(input: UploadMediaInput): Promise<UploadMediaResult> {
     if (input.accessToken === null) {
@@ -97,7 +103,7 @@ function buildCreatePostBody(input: CreatePostInput): Record<string, unknown> {
   const body: Record<string, unknown> = {
     text: input.text
   };
-  if (input.replyToPostId !== null) {
+  if (input.replyToPostId !== null && input.replyToPostId !== undefined) {
     body.reply = {
       in_reply_to_tweet_id: input.replyToPostId
     };

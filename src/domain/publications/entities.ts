@@ -67,12 +67,14 @@ export interface PublicationRequest {
   xAccountId: string;
   scheduledAt: string;
   scheduledAtMs: number;
+  replyToPostId: string | null;
   kind: PublicationKind;
   content: PublicationContent;
   overflowPolicy: OverflowPolicy;
   threadOptions: ThreadOptions;
   followUps: FollowUpRequest[];
   approvalPreference: ApprovalPreference;
+  memo: Record<string, string | number | boolean | null>;
 }
 
 export interface PublicationStepPlan {

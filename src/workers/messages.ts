@@ -4,6 +4,6 @@ export interface PublishQueueMessage {
   revision: number;
   contentHash: string;
   leaseToken: string;
-  reason: "SCHEDULED" | "FOLLOW_UP" | "RETRY";
+  reason: "SCHEDULED" | "FOLLOW_UP" | "RETRY" | "RECOVERY";
   enqueuedAtMs: number;
 }

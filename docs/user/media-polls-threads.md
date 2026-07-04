@@ -97,6 +97,26 @@ AFTER_POLL_CLOSE
 
 follow-upは最大3件です。対象Xアカウントの `self_reply_capability` が `ENABLED` である必要があります。
 
+## 既存X投稿IDへの返信
+
+すでにX上に存在する投稿へ返信する場合は、Publication requestに `replyToPostId` を指定します。
+
+```json
+{
+  "xAccountId": "acc_123",
+  "scheduledAt": "2026-07-02T12:05:00+09:00",
+  "replyToPostId": "2072314870444540211",
+  "kind": "TEXT",
+  "content": {
+    "text": "補足です。"
+  },
+  "overflowPolicy": "REJECT",
+  "approvalPreference": "POLICY"
+}
+```
+
+`replyToPostId` は数字だけのX投稿IDです。指定した場合、最初のStepがその投稿への返信として作成されます。
+
 ## スレッド
 
 標準文字数を超えるTEXTをスレッド化するには、`overflowPolicy: THREAD` を指定します。

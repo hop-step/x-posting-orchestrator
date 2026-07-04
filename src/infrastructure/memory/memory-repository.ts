@@ -72,7 +72,10 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
 
   async listPublicationBundlesForClient(clientId: string, limit: number): Promise<PublicationBundle[]> {
     return [...this.publications.values()]
-      .filter((bundle) => bundle.publication.createdByClientId === clientId)
+      .filter((bundle) => {
+        const permission = this.permissions.get(permissionKey(clientId, bundle.publication.xAccountId));
+        return permission !== undefined && permission.permissionLevel > 0;
+      })
       .sort((a, b) => b.publication.createdAtMs - a.publication.createdAtMs)
       .slice(0, limit)
       .map((bundle) => clone(bundle));
@@ -140,7 +143,7 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
       .filter((bundle) => {
         const publication = bundle.publication;
         return (
-          ["SCHEDULED", "AWAITING_FOLLOW_UP", "RETRY_SCHEDULED"].includes(publication.status) &&
+          ["SCHEDULED", "QUEUED", "AWAITING_FOLLOW_UP", "RETRY_SCHEDULED"].includes(publication.status) &&
           publication.nextActionAtMs !== null &&
           publication.nextActionAtMs <= nowMs &&
           (publication.leaseUntilMs === null || publication.leaseUntilMs < nowMs)
@@ -150,8 +153,7 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
 
     for (const bundle of due) {
       const leaseToken = randomHex(16);
-      const reason =
-        bundle.publication.status === "AWAITING_FOLLOW_UP" ? "FOLLOW_UP" : bundle.publication.status === "RETRY_SCHEDULED" ? "RETRY" : "SCHEDULED";
+      const reason = queueReasonForStatus(bundle.publication.status);
       bundle.publication = {
         ...bundle.publication,
         status: "QUEUED",
@@ -183,6 +185,19 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
   async getMediaAsset(id: string): Promise<MediaAsset | null> {
     return this.mediaAssets.get(id) ?? null;
   }
+}
+
+function queueReasonForStatus(status: PublicationRecord["status"]): PublishQueueMessage["reason"] {
+  if (status === "AWAITING_FOLLOW_UP") {
+    return "FOLLOW_UP";
+  }
+  if (status === "RETRY_SCHEDULED") {
+    return "RETRY";
+  }
+  if (status === "QUEUED") {
+    return "RECOVERY";
+  }
+  return "SCHEDULED";
 }
 
 function permissionKey(clientId: string, xAccountId: string): string {

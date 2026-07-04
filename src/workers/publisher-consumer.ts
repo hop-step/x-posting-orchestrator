@@ -88,7 +88,7 @@ export async function publishQueueMessage(params: {
     if (step.xPostId !== null) {
       continue;
     }
-    const replyToPostId = resolveReplyToPostId(activePlan, step);
+    const replyToPostId = resolveReplyToPostId(publication, activePlan, step);
     step.status = "PUBLISHING";
     step.attemptCount += 1;
     await repository.updatePublicationBundle({ ...bundle, publication: workingPublication, plans: replacePlan(bundle.plans, activePlan) });
@@ -146,9 +146,14 @@ export async function publishQueueMessage(params: {
       step.status = "PUBLISHED";
       step.xPostId = result.xPostId;
       step.publishedAtMs = clock.nowMs();
+      step.nextAttemptAtMs = null;
+      step.lastErrorCode = null;
+      step.lastError = null;
       workingPublication = {
         ...workingPublication,
         rootPublishedAtMs: workingPublication.rootPublishedAtMs ?? clock.nowMs(),
+        failureCode: null,
+        failure: null,
         updatedAtMs: clock.nowMs()
       };
       await repository.updatePublicationBundle({ ...bundle, publication: workingPublication, plans: replacePlan(bundle.plans, activePlan) });
@@ -254,6 +259,8 @@ export async function publishQueueMessage(params: {
     nextActionAtMs: null,
     leaseToken: null,
     leaseUntilMs: null,
+    failureCode: null,
+    failure: null,
     completedAtMs: clock.nowMs(),
     updatedAtMs: clock.nowMs()
   };
@@ -328,9 +335,9 @@ function replacePlan(plans: PublicationPlan[], activePlan: PublicationPlan): Pub
   return plans.map((plan) => (plan.id === activePlan.id ? activePlan : plan));
 }
 
-function resolveReplyToPostId(plan: PublicationPlan, step: PublicationStepPlan): string | null {
+function resolveReplyToPostId(publication: PublicationRecord, plan: PublicationPlan, step: PublicationStepPlan): string | null {
   if (step.relation === "ROOT") {
-    return null;
+    return publication.request.replyToPostId ?? null;
   }
   if (step.relation === "REPLY_PREVIOUS") {
     const previous = plan.steps.find((candidate) => candidate.sequence === step.sequence - 1);

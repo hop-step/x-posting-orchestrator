@@ -12,6 +12,7 @@ Cloudflare Workers 上で動く、X投稿専用の安全なバックエンドで
 - `twitter-text` による重み付き文字数判定
 - Queue重複配信時のX投稿重複防止
 - X OAuth 2.0 PKCE, AES-256-GCM token encryption, refresh
+- `/admin` で投稿前/投稿済み/要確認のPublicationを確認できる簡易管理画面
 - Fake X Adapter と contract/unit/integration tests
 
 ## セットアップ
@@ -28,6 +29,7 @@ pnpm test
 読者別の詳細ドキュメントは [docs/README.md](./docs/README.md) から確認できます。
 
 - 投稿利用者向け: [docs/user/getting-started.md](./docs/user/getting-started.md)
+- AIエージェント向け: [docs/ai/use-case-guide.md](./docs/ai/use-case-guide.md)
 - 管理者向け: [docs/admin/setup.md](./docs/admin/setup.md)
 - 共通概念: [docs/common/concepts.md](./docs/common/concepts.md)
 - 状態と安全ルール: [docs/common/status-and-safety.md](./docs/common/status-and-safety.md)
@@ -53,12 +55,13 @@ wrangler d1 migrations apply x-posting-orchestrator --remote
 値はコードや `wrangler.jsonc` に書かず、Worker Secret として登録します。
 
 ```bash
-wrangler secret put API_KEY_PEPPER
 wrangler secret put TOKEN_ENCRYPTION_KEY_V1
 wrangler secret put X_CLIENT_ID
 wrangler secret put X_CLIENT_SECRET
 wrangler secret put PUBLIC_BASE_URL
 ```
+
+`API_KEY_PEPPER` はAPI Client作成時に必要なため、後述の `pnpm init-api-key-pepper` で生成して登録します。
 
 `TOKEN_ENCRYPTION_KEY_V1` は32 bytesのhexまたはbase64です。
 
@@ -85,15 +88,45 @@ Authorization: Bearer <api-key>
 
 ## API Client 作成
 
-ローカルでAPIキーを生成します。
+初回だけ `API_KEY_PEPPER` を生成し、Cloudflare Secretへ登録します。値は `.secrets/api-key-pepper` に保存されますが、git管理外です。
+
+```bash
+pnpm init-api-key-pepper
+```
+
+ローカルでAPIキーを生成します。`API_KEY_PEPPER` は環境変数、または `.secrets/api-key-pepper` から読みます。
 
 ```bash
 API_KEY_PEPPER=<same-secret> pnpm create-api-key SERVICE "ops-client"
 ```
 
-出力された `keyDigest` と `keyPrefix` を `api_clients` に保存します。APIキーの平文は再表示できないため、運用側で安全に保管してください。
+初回セットアップと同時に生成する場合:
+
+```bash
+pnpm create-api-key AI "external-ai-client" --init-pepper
+```
+
+本番稼働後に外部AI用Clientを追加する場合は、既存の管理用APIキーを使って本番Workerに発行させます。ローカルに `API_KEY_PEPPER` は不要です。
+
+```bash
+X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id acc_xxx
+```
+
+ローカル発行の場合は、出力された `keyDigest` と `keyPrefix` を `api_clients` に保存します。本番Worker経由の場合はD1登録まで自動で行われます。どちらの場合も、APIキーの平文は再表示できないため、運用側で安全に保管してください。
 
 AI actor には `publication:approve`, `publication:reject`, `publication:reconcile` を付与しないでください。アプリケーション実行時にも拒否します。
+
+## 簡易管理画面
+
+```http
+GET /admin
+```
+
+ブラウザでAPIキーを入力すると、既存の `GET /v1/publications?limit=100` を使って投稿前、投稿済み、要確認のPublicationを表示します。表示対象はそのAPIクライアントが読める投稿です。
+
+同じ画面で `GET /v1/x/accounts` / `POST /v1/x/accounts` を使い、Xアカウントの一覧確認、追加、OAuth接続URLの作成もできます。管理画面から追加したXアカウントには、作成に使ったAPIクライアントの投稿権限 `permission_level = 3` が自動で付与されます。
+
+OAuth callback 成功後は `/admin?oauth=success&xAccountId=...` に戻ります。削除ボタンは `DELETE /v1/x/accounts/:id` を使います。未完了のPublicationがあるXアカウントは削除できません。
 
 ## Live Smoke Test
 

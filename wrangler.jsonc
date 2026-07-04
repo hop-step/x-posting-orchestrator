@@ -3,6 +3,15 @@
   "name": "x-posting-orchestrator",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-21",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
+  },
   "triggers": {
     "crons": ["* * * * *"]
   },
@@ -10,14 +19,8 @@
     {
       "binding": "DB",
       "database_name": "x-posting-orchestrator",
-      "database_id": "REPLACE_ME",
+      "database_id": "878293cf-d4d2-45c0-97c5-5a7bc67cc988",
       "preview_database_id": "x-posting-orchestrator-local"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "MEDIA_BUCKET",
-      "bucket_name": "x-posting-media"
     }
   ],
   "queues": {
@@ -38,7 +41,7 @@
     ]
   },
   "vars": {
-    "PUBLIC_BASE_URL": "http://localhost:8787",
+    "PUBLIC_BASE_URL": "https://x-posting-orchestrator.watapyon117.workers.dev",
     "ALLOWED_CORS_ORIGINS": "",
     "SCHEDULE_GRACE_SECONDS": "120",
     "LEASE_DURATION_SECONDS": "120",

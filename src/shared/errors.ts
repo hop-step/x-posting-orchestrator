@@ -8,6 +8,8 @@ export class AppError extends Error {
     public readonly details?: ErrorDetails
   ) {
     super(message);
+    this.name = "AppError";
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
@@ -37,6 +39,10 @@ export function unprocessable(code: string, message: string, details?: ErrorDeta
 
 export function externalFailure(code: string, message: string, details?: ErrorDetails): AppError {
   return new AppError(502, code, message, details);
+}
+
+export function serviceUnavailable(code: string, message: string, details?: ErrorDetails): AppError {
+  return new AppError(503, code, message, details);
 }
 
 export function toErrorResponse(error: unknown, requestId: string): { status: number; body: unknown } {

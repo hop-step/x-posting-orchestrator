@@ -30,6 +30,22 @@ describe("PublicationService permissions and approvals", () => {
     expect((created.body as { publication: { status: string } }).publication.status).toBe("PENDING_APPROVAL");
   });
 
+  it("lists publications by accessible X account, not only by creating client", async () => {
+    const ai = client("ai", "AI", ["publication:preview", "publication:create", "publication:read"]);
+    const human = client("human", "HUMAN", ["publication:read"]);
+    const { service } = makeService({
+      clients: [ai, human],
+      permissions: [permission(ai.id, 2), permission(human.id, 2)]
+    });
+    const created = await service.create(baseRequest(), ai, "idem-ai-create", requestMeta());
+    const publicationId = (created.body as { publication: { id: string } }).publication.id;
+
+    const listed = await service.list(human, 100);
+
+    expect(listed.map((bundle) => bundle.publication.id)).toContain(publicationId);
+    expect(listed[0]?.publication.createdByClientId).toBe(ai.id);
+  });
+
   it("schedules safe level 3 text and requires approval for URL, image, poll, and thread", async () => {
     const serviceClient = client("svc", "SERVICE");
     const { service } = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });

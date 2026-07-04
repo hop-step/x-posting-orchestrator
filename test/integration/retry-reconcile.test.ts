@@ -38,5 +38,27 @@ describe("retry and reconcile operations", () => {
     await expect(service.retry(publication.id, human, "idem-retry", requestMeta())).resolves.toMatchObject({
       body: { publication: { status: "RETRY_SCHEDULED" } }
     });
+
+    const retryMessage = (await repository.claimDuePublications(clock.nowMs(), 120_000, 10))[0] as PublishQueueMessage;
+    await publishQueueMessage({
+      repository,
+      xClient: new FakeXAdapter([{ type: "SUCCESS", xPostId: "post_after_retry", text: "ok" }]),
+      tokenManager: null,
+      mediaBucket: null,
+      clock,
+      config: testConfig,
+      message: retryMessage
+    });
+
+    const published = await repository.getPublicationBundle(publication.id);
+    expect(published?.publication.status).toBe("PUBLISHED");
+    expect(published?.publication.failureCode).toBeNull();
+    expect(published?.publication.failure).toBeNull();
+    expect(published?.plans[0]?.steps[0]).toMatchObject({
+      status: "PUBLISHED",
+      xPostId: "post_after_retry",
+      lastErrorCode: null,
+      lastError: null
+    });
   });
 });

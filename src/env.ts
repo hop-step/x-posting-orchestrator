@@ -2,11 +2,13 @@ import type { PublishQueueMessage } from "./workers/messages";
 
 export interface Env {
   DB: D1Database;
-  MEDIA_BUCKET: R2Bucket;
+  MEDIA_BUCKET?: R2Bucket;
   PUBLISH_QUEUE: Queue<PublishQueueMessage>;
   X_CLIENT_ID?: string;
   X_CLIENT_SECRET?: string;
   TOKEN_ENCRYPTION_KEY_V1?: string;
+  ADMIN_BASIC_USERNAME?: string;
+  ADMIN_BASIC_PASSWORD?: string;
   API_KEY_PEPPER: string;
   PUBLIC_BASE_URL: string;
   ALLOWED_CORS_ORIGINS?: string;

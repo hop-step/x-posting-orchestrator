@@ -19,8 +19,34 @@ DBには平文を保存しません。
 
 ## APIキー生成
 
+初回だけ `API_KEY_PEPPER` を生成してCloudflare Secretへ登録します。
+
+```bash
+pnpm init-api-key-pepper
+```
+
+このコマンドは `.secrets/api-key-pepper` に同じ値を保存します。このディレクトリはgit管理外です。Cloudflare側に既に `API_KEY_PEPPER` が存在し、ローカル値がない場合は、既存APIキーを壊さないため上書きせず停止します。
+
 ```bash
 API_KEY_PEPPER=<same-secret> pnpm create-api-key SERVICE "ops-client"
+```
+
+`.secrets/api-key-pepper` がある場合は環境変数を省略できます。
+
+```bash
+pnpm create-api-key AI "external-ai-client"
+```
+
+本番稼働後に外部AI用Clientを追加する場合は、既存の管理用APIキーを使って本番Workerに発行させます。この方法ではローカルに `API_KEY_PEPPER` は不要で、D1登録まで自動で行われます。
+
+```bash
+X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id acc_xxx
+```
+
+初回セットアップとAPIキー生成を同時に行う場合:
+
+```bash
+pnpm create-api-key AI "external-ai-client" --init-pepper
 ```
 
 出力例:

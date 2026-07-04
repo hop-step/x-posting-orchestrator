@@ -4,6 +4,8 @@ import type { Clock } from "../shared/clock";
 import { decryptToken, encryptToken } from "../infrastructure/crypto/token-crypto";
 import type { PublicationRepository } from "./repository";
 
+type Fetcher = (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => Promise<Response>;
+
 interface RefreshTokenResponse {
   access_token?: string;
   refresh_token?: string;
@@ -12,12 +14,16 @@ interface RefreshTokenResponse {
 }
 
 export class TokenManager {
+  private readonly fetcher: Fetcher;
+
   constructor(
     private readonly repository: PublicationRepository,
     private readonly env: Env,
     private readonly clock: Clock,
-    private readonly fetcher: typeof fetch = fetch
-  ) {}
+    fetcher?: Fetcher
+  ) {
+    this.fetcher = fetcher ?? ((input, init) => fetch(input, init));
+  }
 
   async getAccessToken(account: XAccount): Promise<string | null> {
     const secret = this.env.TOKEN_ENCRYPTION_KEY_V1;

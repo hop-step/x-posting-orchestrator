@@ -161,7 +161,16 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
 
   async listPublicationBundlesForClient(clientId: string, limit: number): Promise<PublicationBundle[]> {
     const rows = await this.database
-      .prepare("SELECT id FROM publications WHERE created_by_client_id = ? ORDER BY created_at_ms DESC LIMIT ?")
+      .prepare(
+        `SELECT p.id
+         FROM publications p
+         INNER JOIN client_account_permissions cap
+           ON cap.x_account_id = p.x_account_id
+          AND cap.client_id = ?
+          AND cap.permission_level > 0
+         ORDER BY p.created_at_ms DESC
+         LIMIT ?`
+      )
       .bind(clientId, limit)
       .all<{ id: string }>();
     const bundles: PublicationBundle[] = [];
@@ -261,7 +270,7 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
       .prepare(
         `SELECT id, revision, content_hash, status
          FROM publications
-         WHERE status IN ('SCHEDULED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')
+         WHERE status IN ('SCHEDULED', 'QUEUED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')
            AND next_action_at_ms <= ?
            AND (lease_until_ms IS NULL OR lease_until_ms < ?)
          ORDER BY next_action_at_ms ASC
@@ -280,7 +289,7 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
            WHERE id = ?
              AND revision = ?
              AND content_hash = ?
-             AND status IN ('SCHEDULED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')
+             AND status IN ('SCHEDULED', 'QUEUED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')
              AND next_action_at_ms <= ?
              AND (lease_until_ms IS NULL OR lease_until_ms < ?)`
         )
@@ -293,7 +302,7 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
           revision: candidate.revision,
           contentHash: candidate.content_hash,
           leaseToken,
-          reason: candidate.status === "AWAITING_FOLLOW_UP" ? "FOLLOW_UP" : candidate.status === "RETRY_SCHEDULED" ? "RETRY" : "SCHEDULED",
+          reason: queueReasonForStatus(candidate.status),
           enqueuedAtMs: nowMs
         });
       }
@@ -489,6 +498,19 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
         approval.createdAtMs
       );
   }
+}
+
+function queueReasonForStatus(status: PublicationRecord["status"]): PublishQueueMessage["reason"] {
+  if (status === "AWAITING_FOLLOW_UP") {
+    return "FOLLOW_UP";
+  }
+  if (status === "RETRY_SCHEDULED") {
+    return "RETRY";
+  }
+  if (status === "QUEUED") {
+    return "RECOVERY";
+  }
+  return "SCHEDULED";
 }
 
 function publicationBind(record: PublicationRecord): unknown[] {

@@ -8,10 +8,22 @@ const offsetDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})
 export const publicationKindSchema = z.enum(["TEXT", "IMAGE", "POLL"]);
 export const overflowPolicySchema = z.enum(["REJECT", "THREAD", "LONGFORM_THEN_THREAD"]).default("REJECT");
 export const approvalPreferenceSchema = z.enum(["POLICY", "REQUIRE_APPROVAL"]).default("POLICY");
+const memoValueSchema = z.union([z.string().max(500), z.number(), z.boolean(), z.null()]);
+const memoSchema = z
+  .record(z.string().min(1).max(80), memoValueSchema)
+  .refine((memo) => Object.keys(memo).length <= 20, "memo can contain at most 20 keys")
+  .optional()
+  .default({});
 
 export const publicationRequestInputSchema = z.object({
   xAccountId: z.string().min(1),
   scheduledAt: z.string().min(1),
+  replyToPostId: z
+    .string()
+    .regex(/^\d+$/u, "replyToPostId must be a numeric X post ID.")
+    .nullable()
+    .optional()
+    .default(null),
   kind: publicationKindSchema,
   content: z.object({
     text: z.string().min(1),
@@ -49,7 +61,8 @@ export const publicationRequestInputSchema = z.object({
     )
     .optional()
     .default([]),
-  approvalPreference: approvalPreferenceSchema
+  approvalPreference: approvalPreferenceSchema,
+  memo: memoSchema
 });
 
 export type PublicationRequestInput = z.input<typeof publicationRequestInputSchema>;
@@ -88,6 +101,7 @@ export function parsePublicationRequest(input: unknown, nowMs: number, config: A
   return {
     ...parsed.data,
     scheduledAtMs,
+    replyToPostId: parsed.data.replyToPostId,
     content: {
       ...parsed.data.content,
       text: normalizeText(parsed.data.content.text),

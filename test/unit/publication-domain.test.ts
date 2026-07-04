@@ -31,6 +31,41 @@ describe("publication domain", () => {
     expect(accountChanged).not.toBe(base);
   });
 
+  it("stores operational memo without changing the approval content hash", async () => {
+    const request = parsePublicationRequest(baseRequest({ memo: { qa_id: "R7_2_396", source: "daily" } }), nowMs, testConfig);
+    const requestWithDifferentMemo = parsePublicationRequest(baseRequest({ memo: { qa_id: "R7_2_397", source: "daily" } }), nowMs, testConfig);
+    expect(request.memo).toEqual({ qa_id: "R7_2_396", source: "daily" });
+    const plans = await buildPublicationPlans({ request, account: account(), nowMs, config: testConfig });
+    const plansWithDifferentMemo = await buildPublicationPlans({ request: requestWithDifferentMemo, account: account(), nowMs, config: testConfig });
+    const hash = await contentHashForApproval({ xAccountId: "acc_1", scheduledAtMs: request.scheduledAtMs, request, revision: 1, plans });
+    const hashWithDifferentMemo = await contentHashForApproval({
+      xAccountId: "acc_1",
+      scheduledAtMs: requestWithDifferentMemo.scheduledAtMs,
+      request: requestWithDifferentMemo,
+      revision: 1,
+      plans: plansWithDifferentMemo
+    });
+    expect(hashWithDifferentMemo).toBe(hash);
+  });
+
+  it("includes external reply target in normalized request and approval hash", async () => {
+    const request = parsePublicationRequest(baseRequest({ replyToPostId: "2072314870444540211" }), nowMs, testConfig);
+    expect(request.replyToPostId).toBe("2072314870444540211");
+    const plans = await buildPublicationPlans({ request, account: account(), nowMs, config: testConfig });
+    const withReply = await contentHashForApproval({ xAccountId: "acc_1", scheduledAtMs: request.scheduledAtMs, request, revision: 1, plans });
+    const withoutReplyRequest = parsePublicationRequest(baseRequest(), nowMs, testConfig);
+    const withoutReplyPlans = await buildPublicationPlans({ request: withoutReplyRequest, account: account(), nowMs, config: testConfig });
+    const withoutReply = await contentHashForApproval({
+      xAccountId: "acc_1",
+      scheduledAtMs: withoutReplyRequest.scheduledAtMs,
+      request: withoutReplyRequest,
+      revision: 1,
+      plans: withoutReplyPlans
+    });
+    expect(withReply).not.toBe(withoutReply);
+    expect(() => parsePublicationRequest(baseRequest({ replyToPostId: "not-a-post-id" }), nowMs, testConfig)).toThrow(AppError);
+  });
+
   it("counts Japanese, emoji, and URLs with twitter-text rules", () => {
     expect(weightedLength("あ")).toBe(2);
     expect(weightedLength("😀")).toBe(2);

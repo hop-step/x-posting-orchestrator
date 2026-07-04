@@ -12,10 +12,15 @@ Publication作成時は、まずpreviewで結果を確認してからcreateす�
   "content": {
     "text": "登録販売者試験の学習を今日も少しずつ進めましょう。"
   },
+  "memo": {
+    "qa_id": "R7_2_396"
+  },
   "overflowPolicy": "REJECT",
   "approvalPreference": "POLICY"
 }
 ```
+
+`memo` は管理画面に表示するための運用メモです。Xには投稿されず、承認用の `contentHash` にも含まれません。
 
 標準文字数を超える場合、`overflowPolicy` によって挙動が変わります。
 
