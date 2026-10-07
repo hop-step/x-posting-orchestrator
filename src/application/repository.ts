@@ -1,7 +1,7 @@
 import type { AuthRepository } from "../domain/auth/authorization";
 import type { ApiClient, ClientAccountPermission, XAccount } from "../domain/auth/types";
 import type { MediaAsset } from "../domain/media/entities";
-import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord } from "../domain/publications/entities";
+import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord, PublicationStatus, StepStatus } from "../domain/publications/entities";
 import type { PublishQueueMessage } from "../workers/messages";
 
 export interface IdempotencyRecord {
@@ -29,12 +29,17 @@ export interface AuditLogInput {
   createdAtMs: number;
 }
 
+export interface PublicationListFilter {
+  publicationStatuses?: PublicationStatus[];
+  stepStatuses?: StepStatus[];
+}
+
 export interface PublicationRepository extends AuthRepository {
   getClientById(clientId: string): Promise<ApiClient | null>;
   createPublicationBundle(bundle: PublicationBundle): Promise<void>;
   updatePublicationBundle(bundle: PublicationBundle): Promise<void>;
   getPublicationBundle(id: string): Promise<PublicationBundle | null>;
-  listPublicationBundlesForClient(clientId: string, limit: number): Promise<PublicationBundle[]>;
+  listPublicationBundlesForClient(clientId: string, limit: number, filter?: PublicationListFilter): Promise<PublicationBundle[]>;
   createApproval(approval: ApprovalRecord): Promise<void>;
   updatePublication(record: PublicationRecord): Promise<void>;
   getIdempotencyRecord(clientId: string, key: string): Promise<IdempotencyRecord | null>;

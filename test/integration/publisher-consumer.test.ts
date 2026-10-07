@@ -113,7 +113,7 @@ describe("scheduler and publisher consumer", () => {
     );
   });
 
-  it("handles rate limit, definite failure, and delivery unknown without unsafe retry", async () => {
+  it("handles rate limit, definite failure, and checked delivery unknown retry", async () => {
     const serviceClient = client("svc", "SERVICE");
 
     const rate = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });
@@ -150,17 +150,80 @@ describe("scheduler and publisher consumer", () => {
     expect((await failure.repository.getPublicationBundle((failureCreated.body as { publication: { id: string } }).publication.id))?.publication.status).toBe("FAILED");
 
     const unknown = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });
-    await unknown.service.create(baseRequest(), serviceClient, "idem-unknown", requestMeta());
+    const unknownCreated = await unknown.service.create(baseRequest(), serviceClient, "idem-unknown", requestMeta());
     unknown.clock.set(Date.parse(scheduledAt));
     const unknownMsg = (await unknown.repository.claimDuePublications(unknown.clock.nowMs(), 120_000, 10))[0] as PublishQueueMessage;
-    const fakeX = new FakeXAdapter([{ type: "DELIVERY_UNKNOWN", errorCode: "X_TIMEOUT", error: {} }]);
+    const fakeX = new FakeXAdapter(
+      [
+        { type: "DELIVERY_UNKNOWN", errorCode: "X_TIMEOUT", error: {} },
+        { type: "DELIVERY_UNKNOWN", errorCode: "X_TIMEOUT", error: {} }
+      ],
+      [],
+      [
+        { type: "SUCCESS", posts: [] },
+        { type: "SUCCESS", posts: [] },
+        { type: "SUCCESS", posts: [] }
+      ]
+    );
     await expect(
       publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock: unknown.clock, config: testConfig, message: unknownMsg })
+    ).resolves.toBe("RETRY_SCHEDULED");
+    expect(fakeX.calls).toHaveLength(1);
+    expect(fakeX.recentPostLookups).toHaveLength(1);
+
+    const retryReady = await unknown.repository.getPublicationBundle((unknownCreated.body as { publication: { id: string } }).publication.id);
+    expect(retryReady?.publication.status).toBe("RETRY_SCHEDULED");
+    unknown.clock.set(retryReady?.publication.nextActionAtMs ?? unknown.clock.nowMs());
+    const retryMsg = (await unknown.repository.claimDuePublications(unknown.clock.nowMs(), 120_000, 10))[0] as PublishQueueMessage;
+    await expect(
+      publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock: unknown.clock, config: testConfig, message: retryMsg })
     ).resolves.toBe("DELIVERY_UNKNOWN");
     await expect(
-      publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock: unknown.clock, config: testConfig, message: unknownMsg })
+      publishQueueMessage({ repository: unknown.repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock: unknown.clock, config: testConfig, message: retryMsg })
     ).resolves.toBe("NOOP");
+    expect(fakeX.calls).toHaveLength(2);
+    expect(fakeX.recentPostLookups).toHaveLength(3);
+    expect(unknown.repository.auditLogs.map((log) => log.eventType)).toEqual(
+      expect.arrayContaining(["PUBLICATION_DELIVERY_UNKNOWN_RETRY_SCHEDULED", "PUBLICATION_DELIVERY_UNKNOWN"])
+    );
+  });
+
+  it("recovers a delivery unknown step when the recent X timeline already contains the post", async () => {
+    const serviceClient = client("svc", "SERVICE");
+    const { service, repository, clock } = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });
+    const created = await service.create(baseRequest(), serviceClient, "idem-recovered", requestMeta());
+    const publication = (created.body as { publication: { id: string } }).publication;
+    clock.set(Date.parse(scheduledAt));
+    const message = (await repository.claimDuePublications(clock.nowMs(), 120_000, 10))[0] as PublishQueueMessage;
+    const fakeX = new FakeXAdapter(
+      [{ type: "DELIVERY_UNKNOWN", errorCode: "X_HTTP_503", error: { title: "Service Unavailable" } }],
+      [],
+      [
+        {
+          type: "SUCCESS",
+          posts: [
+            {
+              id: "post_recovered",
+              text: "安全な投稿です",
+              createdAtMs: clock.nowMs(),
+              referencedPosts: []
+            }
+          ]
+        }
+      ]
+    );
+    await expect(publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message })).resolves.toBe("PUBLISHED");
+
+    const bundle = await repository.getPublicationBundle(publication.id);
+    expect(bundle?.publication.status).toBe("PUBLISHED");
+    expect(bundle?.plans[0]?.steps[0]).toMatchObject({
+      status: "PUBLISHED",
+      xPostId: "post_recovered",
+      lastErrorCode: null
+    });
     expect(fakeX.calls).toHaveLength(1);
+    expect(fakeX.recentPostLookups).toHaveLength(1);
+    expect(repository.auditLogs.map((log) => log.eventType)).toEqual(expect.arrayContaining(["PUBLICATION_DELIVERY_VERIFIED", "PUBLICATION_STEP_PUBLISHED"]));
   });
 
   it("refreshes tokens and stores rotated refresh tokens", async () => {

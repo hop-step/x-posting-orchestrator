@@ -4,5 +4,17 @@ dist/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 .secrets/
+wrangler.production.jsonc
 coverage/
+.DS_Store
+*.log
+*.pem
+*.key
+*.sqlite
+*.sqlite3
+*.db
+*.zip

@@ -30,6 +30,24 @@
 
 特に長文やスレッドでは、分割後の各Stepを確認してください。
 
+## Discord承認通知
+
+Discord連携が設定されている場合、`PENDING_APPROVAL` のPublicationが作成・更新・提出されたタイミングで、指定チャンネルへ確認メッセージが送られます。
+
+Discordメッセージでは次を確認できます。
+
+- Publication ID
+- revision
+- 投稿先Xアカウント
+- 投稿日時
+- 本文プレビュー
+- 画像枚数
+- 投票内容
+- memo
+- policy reasons
+
+メッセージの `管理画面` ボタンから管理画面を開き、最新内容を確認して承認または却下します。Discordメッセージ自体からPublicationの状態は変更しません。
+
 ## 承認API
 
 ```http

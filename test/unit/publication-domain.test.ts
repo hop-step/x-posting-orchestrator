@@ -5,7 +5,7 @@ import { contentHashForApproval } from "../../src/domain/publications/canonical-
 import { buildPublicationPlans } from "../../src/domain/publications/planner";
 import { parsePublicationRequest } from "../../src/domain/publications/schemas";
 import { splitIntoThread } from "../../src/domain/publications/splitter";
-import { weightedLength } from "../../src/domain/publications/weighted-text";
+import { characterCount, LONGFORM_POST_CHARACTER_LIMIT, weightedLength } from "../../src/domain/publications/weighted-text";
 import { account, baseRequest, nowMs, testConfig } from "../helpers/publication-fixtures";
 
 describe("publication domain", () => {
@@ -70,6 +70,7 @@ describe("publication domain", () => {
     expect(weightedLength("あ")).toBe(2);
     expect(weightedLength("😀")).toBe(2);
     expect(weightedLength("https://example.com/some/very/long/path")).toBeLessThan(40);
+    expect(characterCount("あ😀")).toBe(2);
   });
 
   it("does not split URLs or grapheme clusters and keeps numbered parts within 280", () => {
@@ -84,7 +85,7 @@ describe("publication domain", () => {
     expect(() => splitIntoThread("あ".repeat(700), { numbering: true, maxParts: 2 })).toThrow(AppError);
   });
 
-  it("rejects IMAGE + POLL and overlong poll text", async () => {
+  it("rejects IMAGE + POLL and accepts a longform poll", async () => {
     const imagePoll = parsePublicationRequest(
       baseRequest({
         kind: "POLL",
@@ -103,7 +104,65 @@ describe("publication domain", () => {
       nowMs,
       testConfig
     );
-    await expect(buildPublicationPlans({ request: overlongPoll, account: account(), nowMs, config: testConfig })).rejects.toThrow(AppError);
+    const [pollPlan] = await buildPublicationPlans({ request: overlongPoll, account: account(), nowMs, config: testConfig });
+    expect(pollPlan).toMatchObject({
+      strategy: "LONGFORM_SINGLE",
+      capabilityRequirements: { longform: "ENABLED" }
+    });
+    expect(pollPlan?.steps[0]?.poll?.options).toEqual(["a", "b"]);
+  });
+
+  it("uses a single longform post up to 25,000 characters with REJECT", async () => {
+    const request = parsePublicationRequest(
+      baseRequest({ content: { text: "あ".repeat(LONGFORM_POST_CHARACTER_LIMIT) } }),
+      nowMs,
+      testConfig
+    );
+    const [plan] = await buildPublicationPlans({ request, account: account(), nowMs, config: testConfig });
+
+    expect(plan).toMatchObject({
+      strategy: "LONGFORM_SINGLE",
+      capabilityRequirements: { longform: "ENABLED" }
+    });
+    expect(plan?.steps).toHaveLength(1);
+    expect(plan?.steps[0]?.text).toHaveLength(LONGFORM_POST_CHARACTER_LIMIT);
+  });
+
+  it("rejects text beyond the 25,000 character Premium limit", async () => {
+    const request = parsePublicationRequest(
+      baseRequest({ content: { text: "あ".repeat(LONGFORM_POST_CHARACTER_LIMIT + 1) } }),
+      nowMs,
+      testConfig
+    );
+
+    await expect(buildPublicationPlans({ request, account: account(), nowMs, config: testConfig })).rejects.toMatchObject({
+      code: "TEXT_TOO_LONG"
+    });
+  });
+
+  it("keeps media and long follow-ups on longform steps", async () => {
+    const request = parsePublicationRequest(
+      baseRequest({
+        kind: "IMAGE",
+        content: { text: "あ".repeat(141), mediaIds: ["media_1"] },
+        followUps: [
+          {
+            trigger: { type: "AFTER_PARENT_PUBLISHED", offsetMinutes: 5 },
+            content: { text: "い".repeat(141) }
+          }
+        ]
+      }),
+      nowMs,
+      testConfig
+    );
+    const [plan] = await buildPublicationPlans({ request, account: account(), nowMs, config: testConfig });
+
+    expect(plan).toMatchObject({
+      strategy: "LONGFORM_SINGLE",
+      capabilityRequirements: { longform: "ENABLED", selfReply: "ENABLED" }
+    });
+    expect(plan?.steps[0]?.mediaIds).toEqual(["media_1"]);
+    expect(plan?.steps[1]?.text).toBe("い".repeat(141));
   });
 
   it("rejects naive datetime and normalizes +09:00 to UTC", () => {

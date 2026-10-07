@@ -1,5 +1,3 @@
-const DEFAULT_BASE_URL = "https://x-posting-orchestrator.watapyon117.workers.dev";
-
 interface CliOptions {
   actorType: string;
   name: string;
@@ -60,10 +58,11 @@ function parseArgs(args: string[]): CliOptions {
   const actorType = positional[0];
   const name = positional[1];
   const xAccountId = values.get("--x-account-id");
+  const baseUrl = values.get("--base-url") ?? process.env.X_POSTING_API_BASE_URL;
   const apiKey = values.get("--api-key") ?? process.env.X_POSTING_ADMIN_API_KEY ?? process.env.X_POSTING_API_KEY;
 
   if (actorType === undefined || name === undefined) {
-    throw new Error('Usage: pnpm create-remote-api-client AI "client-name" --x-account-id acc_xxx --api-key <admin-api-key>');
+    throw new Error('Usage: pnpm create-remote-api-client AI "client-name" --x-account-id acc_xxx --base-url <worker-url> (set X_POSTING_ADMIN_API_KEY)');
   }
   if (xAccountId === undefined) {
     throw new Error("--x-account-id is required.");
@@ -71,12 +70,19 @@ function parseArgs(args: string[]): CliOptions {
   if (apiKey === undefined || apiKey.trim().length === 0) {
     throw new Error("--api-key or X_POSTING_ADMIN_API_KEY is required. Use an existing HUMAN/SERVICE key with account:manage.");
   }
+  if (baseUrl === undefined || baseUrl.trim().length === 0) {
+    throw new Error("--base-url or X_POSTING_API_BASE_URL is required. Use your own deployed Worker URL.");
+  }
+  const parsedUrl = new URL(baseUrl);
+  if (!["https:", "http:"].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) {
+    throw new Error("API base URL must be an HTTP(S) URL without embedded credentials.");
+  }
 
   return {
     actorType,
     name,
     xAccountId,
-    baseUrl: values.get("--base-url") ?? process.env.X_POSTING_API_BASE_URL ?? DEFAULT_BASE_URL,
+    baseUrl: parsedUrl.toString().replace(/\/$/u, ""),
     apiKey
   };
 }

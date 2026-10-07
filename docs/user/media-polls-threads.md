@@ -68,7 +68,7 @@ Publicationでは `mediaIds` を指定します。
 
 投票と画像は同時に使えません。
 
-投票本文は標準文字数内である必要があります。投票は人間承認が必要です。
+投票本文もX Premiumの長文投稿として25,000文字まで指定できます。280文字相当を超える場合は、対象アカウントの長文投稿Capabilityが必要です。投票は人間承認が必要です。
 
 ## 投票後follow-up
 
@@ -119,7 +119,7 @@ follow-upは最大3件です。対象Xアカウントの `self_reply_capability`
 
 ## スレッド
 
-標準文字数を超えるTEXTをスレッド化するには、`overflowPolicy: THREAD` を指定します。
+280文字相当を超えるTEXTをスレッド化するには、`overflowPolicy: THREAD` を指定します。単一の長文投稿にする場合は、通常どおり `overflowPolicy: REJECT` を使います。
 
 ```json
 {
@@ -148,4 +148,4 @@ Step 2以降で失敗しても、成功済みStepは再投稿されません。
 
 Fallbackへ切り替えるのは、X APIから「長文利用不可」や「文字数超過」など、投稿未作成と判断できる明示的なエラーを受けた場合だけです。
 
-timeout、5xx、接続断、解析不能responseではFallbackしません。`DELIVERY_UNKNOWN` で停止します。
+timeout、5xx、接続断、解析不能responseではFallbackしません。対象Xアカウントの直近投稿を確認し、見つからない場合だけ上限付きで再実行します。上限後も確認できない場合は `DELIVERY_UNKNOWN` で停止します。

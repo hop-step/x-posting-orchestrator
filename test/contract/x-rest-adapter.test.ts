@@ -46,6 +46,40 @@ describe("XRestAdapter contract mapping", () => {
     });
   });
 
+  it("maps recent user posts lookup to GET /2/users/:id/tweets", async () => {
+    const requests: { url: string; init: RequestInit | undefined }[] = [];
+    const adapter = new XRestAdapter(async (url, init) => {
+      requests.push({ url: requestUrl(url), init });
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "456",
+              text: "reply",
+              created_at: "2026-08-08T00:00:00.000Z",
+              referenced_tweets: [{ type: "replied_to", id: "111" }]
+            }
+          ]
+        }),
+        { status: 200 }
+      );
+    });
+
+    await expect(adapter.listRecentPosts({ userId: "100", maxResults: 5, accessToken: "token" })).resolves.toEqual({
+      type: "SUCCESS",
+      posts: [
+        {
+          id: "456",
+          text: "reply",
+          createdAtMs: Date.parse("2026-08-08T00:00:00.000Z"),
+          referencedPosts: [{ type: "replied_to", id: "111" }]
+        }
+      ]
+    });
+    expect(requests[0]?.url).toBe("https://api.x.com/2/users/100/tweets?max_results=5&tweet.fields=created_at%2Creferenced_tweets&exclude=retweets");
+    expect((requests[0]?.init?.headers as Record<string, string>).Authorization).toBe("Bearer token");
+  });
+
   it("classifies 429 and 5xx without automatic retrying the request", async () => {
     const rate = new XRestAdapter(async () => new Response(JSON.stringify({ title: "rate" }), { status: 429, headers: { "x-rate-limit-reset": "1782097200" } }));
     await expect(

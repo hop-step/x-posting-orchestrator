@@ -16,12 +16,16 @@ AI Actorは次を実行しないでください。サーバー側でも拒否さ
 
 AIが基本的に行うのは、`preview`、`create`、必要に応じた `list` / `get` / `patch` / `cancel` です。
 
+画像投稿にも対応しています。画像を使う場合は、Publication作成前に `/v1/media` へアップロードし、返ってきた `media.id` を `content.mediaIds` に指定します。API Clientには `media:create` scopeが必要です。
+
 ## 共通の呼び出しルール
 
-本番ホスト:
+外部AIは作業開始時に `GET /v1/docs/ai` をBearer APIキー付きで呼び出し、最新の `external-ai-handoff.md` を取得できます。responseのContent-Typeは `text/markdown` です。
+
+管理者から渡されたAPI base URLを使います。以下はプレースホルダーです。
 
 ```text
-https://x-posting-orchestrator.watapyon117.workers.dev
+https://x-posting-orchestrator.example.workers.dev
 ```
 
 API endpointは `/v1/...` です。例: `POST /v1/publications`。
@@ -120,6 +124,8 @@ preview後に確認すること:
 - `weightedLength` が意図通りか確認する
 - `contentHash` は承認時に必要な値として保存・表示する
 - `memo` は管理用メモです。Xには投稿されず、`contentHash` にも含まれません
+
+`overflowPolicy: REJECT` でも、280文字相当を超える本文は拒否されず、25,000文字までは単一のX Premium長文投稿になります。長文投稿は `PENDING_APPROVAL` になる前提で扱い、対象アカウントの `longform_capability` を確認してください。
 
 問題なければcreateします。
 
@@ -250,8 +256,11 @@ aiGenerated: true
 
 できること:
 
-- 標準文字数を超える本文をスレッド化する
+- 25,000文字までの本文を単一のX Premium長文投稿として作る
+- 280文字相当を超える本文をスレッド化する
 - 長文投稿が使えるアカウントでは長文を第一候補にし、だめならスレッドへfallbackする
+
+単一の長文投稿にしたい場合は、通常の例と同じく `overflowPolicy: REJECT` を指定します。
 
 スレッドにしたい場合:
 
@@ -385,7 +394,7 @@ Authorization: Bearer <api-key>
 | `PARTIALLY_PUBLISHED` | 一部投稿済み。AIはretryせず、人間またはSERVICEに確認を依頼する |
 | `RETRY_SCHEDULED` | 再実行待ちとして表示し、重複作成しない |
 | `FAILED` | 人間またはSERVICEにretry判断を依頼する |
-| `DELIVERY_UNKNOWN` | 人間にX上の投稿有無確認とreconcileを依頼する |
+| `DELIVERY_UNKNOWN` | システム側の直近投稿確認と上限付きretry後も確定できない状態。人間にX上の投稿有無確認とreconcileを依頼する |
 | `BLOCKED_POLICY` | 実行直前に止まった状態として、人間または管理者に確認を依頼する |
 | `REJECTED` / `CANCELLED` | 終了状態として扱う |
 
@@ -444,7 +453,7 @@ Idempotency-Key: <uuid>
 | `POLICY_DENIED` | 作成しない。理由を人間へ返す |
 | `SELF_REPLY_CAPABILITY_REQUIRED` | スレッド/follow-upをやめるか、管理者にcapability確認を依頼する |
 | `REVISION_OR_HASH_MISMATCH` | 最新Publicationを再取得する |
-| `DELIVERY_UNKNOWN_RETRY_FORBIDDEN` | retryしない。人間にreconcileを依頼する |
+| `DELIVERY_UNKNOWN_RETRY_FORBIDDEN` | API利用者はretryしない。人間にreconcileを依頼する |
 
 エラーresponseの `requestId` は問い合わせや調査に必要です。ユーザーへ返す内部メモに含めてください。
 

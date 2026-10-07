@@ -1,10 +1,11 @@
 import { evaluatePolicy } from "../domain/policies/policy-engine";
+import type { XAccount } from "../domain/auth/types";
 import type { PublicationPlan, PublicationRecord, PublicationStepPlan } from "../domain/publications/entities";
 import { hasValidApproval } from "../application/publication-service";
 import type { PublicationRepository } from "../application/repository";
 import type { TokenManager } from "../application/token-manager";
 import type { AppConfig } from "../env";
-import type { UploadMediaResult, XClient } from "../infrastructure/x/x-client";
+import type { RecentPost, UploadMediaResult, XClient, XDeliveryUnknown } from "../infrastructure/x/x-client";
 import type { Clock } from "../shared/clock";
 import type { PublishQueueMessage } from "./messages";
 
@@ -89,6 +90,52 @@ export async function publishQueueMessage(params: {
       continue;
     }
     const replyToPostId = resolveReplyToPostId(publication, activePlan, step);
+    if (shouldVerifyBeforeRetry(step)) {
+      const verification = await verifyRecentDelivery({
+        xClient: params.xClient,
+        account,
+        accessToken,
+        step,
+        replyToPostId,
+        clock,
+        config: params.config
+      });
+      if (verification.type === "FOUND") {
+        workingPublication = await markStepPublishedFromRecentPost({
+          repository,
+          bundle,
+          activePlan,
+          workingPublication,
+          step,
+          post: verification.post,
+          clientId: client.id,
+          accountId: account.id,
+          clock
+        });
+        continue;
+      }
+      if (verification.type === "UNAVAILABLE") {
+        return finishDeliveryUnknown({
+          repository,
+          bundle,
+          activePlan,
+          workingPublication,
+          step,
+          clientId: client.id,
+          accountId: account.id,
+          contentHash: publication.contentHash,
+          clock,
+          errorCode: step.lastErrorCode ?? verification.errorCode,
+          error: {
+            delivery: step.lastError,
+            verification: {
+              errorCode: verification.errorCode,
+              error: verification.error
+            }
+          }
+        });
+      }
+    }
     step.status = "PUBLISHING";
     step.attemptCount += 1;
     await repository.updatePublicationBundle({ ...bundle, publication: workingPublication, plans: replacePlan(bundle.plans, activePlan) });
@@ -203,7 +250,31 @@ export async function publishQueueMessage(params: {
       }
     }
 
-    const status = result.type === "DEFINITE_FAILURE" ? "FAILED" : "DELIVERY_UNKNOWN";
+    if (result.type === "DELIVERY_UNKNOWN") {
+      const outcome = await handleDeliveryUnknownPostResult({
+        repository,
+        xClient: params.xClient,
+        bundle,
+        activePlan,
+        workingPublication,
+        step,
+        result,
+        clientId: client.id,
+        account,
+        accessToken,
+        replyToPostId,
+        contentHash: publication.contentHash,
+        clock,
+        config: params.config
+      });
+      if (outcome.type === "PUBLISHED") {
+        workingPublication = outcome.publication;
+        continue;
+      }
+      return outcome.status;
+    }
+
+    const status = "FAILED";
     step.status = status;
     step.lastErrorCode = result.errorCode;
     step.lastError = result.error;
@@ -266,6 +337,282 @@ export async function publishQueueMessage(params: {
   };
   await repository.updatePublicationBundle({ ...bundle, publication: finalPublication, plans: replacePlan(bundle.plans, activePlan) });
   return "PUBLISHED";
+}
+
+type DeliveryVerificationResult =
+  | { type: "FOUND"; post: RecentPost }
+  | { type: "NOT_FOUND" }
+  | { type: "UNAVAILABLE"; errorCode: string; error: unknown };
+
+type DeliveryUnknownPostOutcome =
+  | { type: "PUBLISHED"; publication: PublicationRecord }
+  | { type: "STOPPED"; status: "DELIVERY_UNKNOWN" | "RETRY_SCHEDULED" };
+
+async function handleDeliveryUnknownPostResult(params: {
+  repository: PublicationRepository;
+  xClient: XClient;
+  bundle: Parameters<PublicationRepository["updatePublicationBundle"]>[0];
+  activePlan: PublicationPlan;
+  workingPublication: PublicationRecord;
+  step: PublicationStepPlan;
+  result: XDeliveryUnknown;
+  clientId: string;
+  account: XAccount;
+  accessToken: string | null;
+  replyToPostId: string | null;
+  contentHash: string;
+  clock: Clock;
+  config: AppConfig;
+}): Promise<DeliveryUnknownPostOutcome> {
+  const verification = await verifyRecentDelivery({
+    xClient: params.xClient,
+    account: params.account,
+    accessToken: params.accessToken,
+    step: params.step,
+    replyToPostId: params.replyToPostId,
+    clock: params.clock,
+    config: params.config
+  });
+  if (verification.type === "FOUND") {
+    return {
+      type: "PUBLISHED",
+      publication: await markStepPublishedFromRecentPost({
+        repository: params.repository,
+        bundle: params.bundle,
+        activePlan: params.activePlan,
+        workingPublication: params.workingPublication,
+        step: params.step,
+        post: verification.post,
+        clientId: params.clientId,
+        accountId: params.account.id,
+        clock: params.clock
+      })
+    };
+  }
+
+  if (verification.type === "NOT_FOUND" && params.step.attemptCount < params.config.deliveryUnknownMaxAttempts) {
+    await scheduleDeliveryUnknownRetry({
+      repository: params.repository,
+      bundle: params.bundle,
+      activePlan: params.activePlan,
+      workingPublication: params.workingPublication,
+      step: params.step,
+      result: params.result,
+      clientId: params.clientId,
+      accountId: params.account.id,
+      contentHash: params.contentHash,
+      clock: params.clock,
+      config: params.config
+    });
+    return { type: "STOPPED", status: "RETRY_SCHEDULED" };
+  }
+
+  const error =
+    verification.type === "UNAVAILABLE"
+      ? {
+          delivery: params.result.error,
+          verification: {
+            errorCode: verification.errorCode,
+            error: verification.error
+          }
+        }
+      : params.result.error;
+  await finishDeliveryUnknown({
+    repository: params.repository,
+    bundle: params.bundle,
+    activePlan: params.activePlan,
+    workingPublication: params.workingPublication,
+    step: params.step,
+    clientId: params.clientId,
+    accountId: params.account.id,
+    contentHash: params.contentHash,
+    clock: params.clock,
+    errorCode: params.result.errorCode,
+    error
+  });
+  return { type: "STOPPED", status: "DELIVERY_UNKNOWN" };
+}
+
+async function verifyRecentDelivery(params: {
+  xClient: XClient;
+  account: XAccount;
+  accessToken: string | null;
+  step: PublicationStepPlan;
+  replyToPostId: string | null;
+  clock: Clock;
+  config: AppConfig;
+}): Promise<DeliveryVerificationResult> {
+  if (params.account.xUserId === null) {
+    return { type: "UNAVAILABLE", errorCode: "X_USER_ID_MISSING", error: { xAccountId: params.account.id } };
+  }
+  const result = await params.xClient.listRecentPosts({
+    userId: params.account.xUserId,
+    maxResults: 5,
+    accessToken: params.accessToken
+  });
+  if (result.type !== "SUCCESS") {
+    return { type: "UNAVAILABLE", errorCode: result.errorCode, error: result.error };
+  }
+  const sinceMs = params.clock.nowMs() - params.config.deliveryUnknownVerificationWindowSeconds * 1000;
+  const post = result.posts.find((candidate) => matchesRecentPost(candidate, params.step, params.replyToPostId, sinceMs));
+  return post === undefined ? { type: "NOT_FOUND" } : { type: "FOUND", post };
+}
+
+function matchesRecentPost(post: RecentPost, step: PublicationStepPlan, replyToPostId: string | null, sinceMs: number): boolean {
+  if (post.createdAtMs !== null && post.createdAtMs < sinceMs) {
+    return false;
+  }
+  if (normalizePostText(post.text) !== normalizePostText(step.text)) {
+    return false;
+  }
+  const repliedToIds = post.referencedPosts.filter((reference) => reference.type === "replied_to").map((reference) => reference.id);
+  if (replyToPostId === null) {
+    return repliedToIds.length === 0;
+  }
+  return repliedToIds.includes(replyToPostId);
+}
+
+function normalizePostText(value: string): string {
+  return value.replace(/\r\n?/gu, "\n").trim();
+}
+
+function shouldVerifyBeforeRetry(step: PublicationStepPlan): boolean {
+  return step.status === "RETRY_SCHEDULED" && step.attemptCount > 0 && step.lastErrorCode !== "X_RATE_LIMITED";
+}
+
+async function markStepPublishedFromRecentPost(params: {
+  repository: PublicationRepository;
+  bundle: Parameters<PublicationRepository["updatePublicationBundle"]>[0];
+  activePlan: PublicationPlan;
+  workingPublication: PublicationRecord;
+  step: PublicationStepPlan;
+  post: RecentPost;
+  clientId: string;
+  accountId: string;
+  clock: Clock;
+}): Promise<PublicationRecord> {
+  const publishedAtMs = params.post.createdAtMs ?? params.clock.nowMs();
+  params.step.status = "PUBLISHED";
+  params.step.xPostId = params.post.id;
+  params.step.publishedAtMs = publishedAtMs;
+  params.step.nextAttemptAtMs = null;
+  params.step.lastErrorCode = null;
+  params.step.lastError = null;
+  const publication = {
+    ...params.workingPublication,
+    rootPublishedAtMs: params.workingPublication.rootPublishedAtMs ?? publishedAtMs,
+    failureCode: null,
+    failure: null,
+    updatedAtMs: params.clock.nowMs()
+  };
+  await params.repository.updatePublicationBundle({ ...params.bundle, publication, plans: replacePlan(params.bundle.plans, params.activePlan) });
+  await params.repository.recordAuditLog({
+    eventType: "PUBLICATION_DELIVERY_VERIFIED",
+    actorClientId: params.clientId,
+    xAccountId: params.accountId,
+    publicationId: publication.id,
+    requestId: null,
+    contentHash: publication.contentHash,
+    metadata: { stepId: params.step.id, xPostId: params.post.id },
+    createdAtMs: params.clock.nowMs()
+  });
+  await params.repository.recordAuditLog({
+    eventType: "PUBLICATION_STEP_PUBLISHED",
+    actorClientId: params.clientId,
+    xAccountId: params.accountId,
+    publicationId: publication.id,
+    requestId: null,
+    contentHash: publication.contentHash,
+    metadata: { stepId: params.step.id, xPostId: params.post.id, recoveredFromDeliveryUnknown: true },
+    createdAtMs: params.clock.nowMs()
+  });
+  return publication;
+}
+
+async function scheduleDeliveryUnknownRetry(params: {
+  repository: PublicationRepository;
+  bundle: Parameters<PublicationRepository["updatePublicationBundle"]>[0];
+  activePlan: PublicationPlan;
+  workingPublication: PublicationRecord;
+  step: PublicationStepPlan;
+  result: XDeliveryUnknown;
+  clientId: string;
+  accountId: string;
+  contentHash: string;
+  clock: Clock;
+  config: AppConfig;
+}): Promise<void> {
+  const retryAtMs = params.clock.nowMs() + params.config.deliveryUnknownRetryDelaySeconds * 1000;
+  params.step.status = "RETRY_SCHEDULED";
+  params.step.nextAttemptAtMs = retryAtMs;
+  params.step.lastErrorCode = params.result.errorCode;
+  params.step.lastError = params.result.error;
+  await params.repository.updatePublicationBundle({
+    ...params.bundle,
+    publication: {
+      ...params.workingPublication,
+      status: "RETRY_SCHEDULED",
+      nextActionAtMs: retryAtMs,
+      leaseToken: null,
+      leaseUntilMs: null,
+      updatedAtMs: params.clock.nowMs()
+    },
+    plans: replacePlan(params.bundle.plans, params.activePlan)
+  });
+  await params.repository.recordAuditLog({
+    eventType: "PUBLICATION_DELIVERY_UNKNOWN_RETRY_SCHEDULED",
+    actorClientId: params.clientId,
+    xAccountId: params.accountId,
+    publicationId: params.workingPublication.id,
+    requestId: null,
+    contentHash: params.contentHash,
+    metadata: { stepId: params.step.id, errorCode: params.result.errorCode, attempt: params.step.attemptCount, retryAtMs },
+    createdAtMs: params.clock.nowMs()
+  });
+}
+
+async function finishDeliveryUnknown(params: {
+  repository: PublicationRepository;
+  bundle: Parameters<PublicationRepository["updatePublicationBundle"]>[0];
+  activePlan: PublicationPlan;
+  workingPublication: PublicationRecord;
+  step: PublicationStepPlan;
+  clientId: string;
+  accountId: string;
+  contentHash: string;
+  clock: Clock;
+  errorCode: string;
+  error: unknown;
+}): Promise<"DELIVERY_UNKNOWN"> {
+  params.step.status = "DELIVERY_UNKNOWN";
+  params.step.nextAttemptAtMs = null;
+  params.step.lastErrorCode = params.errorCode;
+  params.step.lastError = params.error;
+  await params.repository.updatePublicationBundle({
+    ...params.bundle,
+    publication: {
+      ...params.workingPublication,
+      status: "DELIVERY_UNKNOWN",
+      nextActionAtMs: null,
+      leaseToken: null,
+      leaseUntilMs: null,
+      failureCode: params.errorCode,
+      failure: params.error,
+      updatedAtMs: params.clock.nowMs()
+    },
+    plans: replacePlan(params.bundle.plans, params.activePlan)
+  });
+  await params.repository.recordAuditLog({
+    eventType: "PUBLICATION_DELIVERY_UNKNOWN",
+    actorClientId: params.clientId,
+    xAccountId: params.accountId,
+    publicationId: params.workingPublication.id,
+    requestId: null,
+    contentHash: params.contentHash,
+    metadata: { stepId: params.step.id, errorCode: params.errorCode },
+    createdAtMs: params.clock.nowMs()
+  });
+  return "DELIVERY_UNKNOWN";
 }
 
 async function uploadStepMedia(params: {

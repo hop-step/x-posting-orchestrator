@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../../src/shared/errors";
+import type { PublicationListFilter } from "../../src/application/repository";
 import { client, account, permission, makeService, baseRequest, requestMeta, scheduledAt } from "../helpers/publication-fixtures";
 
 describe("PublicationService permissions and approvals", () => {
@@ -46,7 +47,82 @@ describe("PublicationService permissions and approvals", () => {
     expect(listed[0]?.publication.createdByClientId).toBe(ai.id);
   });
 
-  it("schedules safe level 3 text and requires approval for URL, image, poll, and thread", async () => {
+  it("filters publication lists by publication and step status groups", async () => {
+    const human = client("human", "HUMAN");
+    const { service, repository, clock } = makeService({
+      clients: [human],
+      permissions: [permission(human.id, 2)]
+    });
+    const pending = await service.create(baseRequest({ scheduledAt: "2026-06-22T12:00:00+09:00" }), human, "idem-pending", requestMeta());
+    const published = await service.create(baseRequest({ scheduledAt: "2026-06-23T12:00:00+09:00" }), human, "idem-published", requestMeta());
+    const failedStep = await service.create(baseRequest({ scheduledAt: "2026-06-24T12:00:00+09:00" }), human, "idem-failed-step", requestMeta());
+
+    const pendingId = (pending.body as { publication: { id: string } }).publication.id;
+    const publishedId = (published.body as { publication: { id: string } }).publication.id;
+    const failedStepId = (failedStep.body as { publication: { id: string } }).publication.id;
+
+    const publishedBundle = await repository.getPublicationBundle(publishedId);
+    if (publishedBundle === null) {
+      throw new Error("published bundle missing");
+    }
+    publishedBundle.publication = {
+      ...publishedBundle.publication,
+      status: "PUBLISHED",
+      completedAtMs: clock.nowMs(),
+      updatedAtMs: clock.nowMs()
+    };
+    publishedBundle.plans = publishedBundle.plans.map((plan) => ({
+      ...plan,
+      steps: plan.steps.map((step) => ({
+        ...step,
+        status: "PUBLISHED",
+        publishedAtMs: clock.nowMs()
+      }))
+    }));
+    await repository.updatePublicationBundle(publishedBundle);
+
+    const failedStepBundle = await repository.getPublicationBundle(failedStepId);
+    if (failedStepBundle === null) {
+      throw new Error("failed step bundle missing");
+    }
+    failedStepBundle.publication = {
+      ...failedStepBundle.publication,
+      status: "PARTIALLY_PUBLISHED",
+      updatedAtMs: clock.nowMs()
+    };
+    failedStepBundle.plans = failedStepBundle.plans.map((plan) => ({
+      ...plan,
+      steps: plan.steps.map((step, index) => ({
+        ...step,
+        status: index === 0 ? "FAILED" : step.status
+      }))
+    }));
+    await repository.updatePublicationBundle(failedStepBundle);
+
+    const beforeFilter: PublicationListFilter = {
+      publicationStatuses: ["DRAFT", "PENDING_APPROVAL", "SCHEDULED", "QUEUED", "PUBLISHING", "AWAITING_FOLLOW_UP", "RETRY_SCHEDULED"],
+      stepStatuses: ["PENDING", "READY", "UPLOADING_MEDIA", "PUBLISHING", "RETRY_SCHEDULED"]
+    };
+    const attentionFilter: PublicationListFilter = {
+      publicationStatuses: ["FAILED", "DELIVERY_UNKNOWN", "BLOCKED_POLICY", "REJECTED", "CANCELLED"],
+      stepStatuses: ["FAILED", "DELIVERY_UNKNOWN"]
+    };
+    const postedFilter: PublicationListFilter = {
+      publicationStatuses: ["PUBLISHED", "PARTIALLY_PUBLISHED"],
+      stepStatuses: ["PUBLISHED"]
+    };
+
+    const beforeIds = (await service.list(human, 100, beforeFilter)).map((bundle) => bundle.publication.id);
+    const attentionIds = (await service.list(human, 100, attentionFilter)).map((bundle) => bundle.publication.id);
+    const postedIds = (await service.list(human, 100, postedFilter)).map((bundle) => bundle.publication.id);
+
+    expect(beforeIds).toContain(pendingId);
+    expect(beforeIds).not.toContain(publishedId);
+    expect(attentionIds).toContain(failedStepId);
+    expect(postedIds).toEqual(expect.arrayContaining([publishedId, failedStepId]));
+  });
+
+  it("schedules safe level 3 text and requires approval for URL, image, poll, longform, and thread", async () => {
     const serviceClient = client("svc", "SERVICE");
     const { service } = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });
     await expect(service.create(baseRequest(), serviceClient, "idem-safe", requestMeta())).resolves.toMatchObject({
@@ -66,6 +142,14 @@ describe("PublicationService permissions and approvals", () => {
         requestMeta()
       )
     ).resolves.toMatchObject({ body: { publication: { status: "PENDING_APPROVAL" } } });
+    const longform = await service.create(
+      baseRequest({ content: { text: "あ".repeat(200) } }),
+      serviceClient,
+      "idem-longform",
+      requestMeta()
+    );
+    expect(longform.body).toMatchObject({ publication: { status: "PENDING_APPROVAL" } });
+    expect((longform.body as { policy: { reasons: string[] } }).policy.reasons).toContain("LONG_TEXT_REQUIRES_HUMAN_APPROVAL");
     await expect(
       service.create(
         baseRequest({ content: { text: "あ".repeat(200) }, overflowPolicy: "THREAD", threadOptions: { numbering: true, maxParts: 10, mediaPlacement: "FIRST" } }),
@@ -107,6 +191,44 @@ describe("PublicationService permissions and approvals", () => {
     expect((patched.body as { approval: { activeApprovalId: string | null } }).approval.activeApprovalId).toBeNull();
     const bundle = await repository.getPublicationBundle(publication.id);
     expect(bundle?.approvals[0]?.decision).toBe("REVOKED");
+  });
+
+  it("edits poll options through publication patch", async () => {
+    const human = client("human", "HUMAN");
+    const { service, repository } = makeService({ clients: [human], permissions: [permission(human.id, 2)] });
+    const request = baseRequest({
+      kind: "POLL",
+      content: {
+        text: "どちらですか？",
+        poll: {
+          options: ["正", "誤", "わからない"],
+          durationMinutes: 10080
+        }
+      }
+    });
+    const created = await service.create(request, human, "idem-create-poll", requestMeta());
+    const publication = (created.body as { publication: { id: string } }).publication;
+
+    await service.patch(
+      publication.id,
+      {
+        ...request,
+        content: {
+          text: "どれですか？",
+          poll: {
+            options: ["はい", "いいえ", "保留"],
+            durationMinutes: 10080
+          }
+        }
+      },
+      human,
+      "idem-patch-poll",
+      requestMeta(`/v1/publications/${publication.id}`)
+    );
+
+    const bundle = await repository.getPublicationBundle(publication.id);
+    expect(bundle?.publication.request.content.poll?.options).toEqual(["はい", "いいえ", "保留"]);
+    expect(bundle?.publication.request.content.poll?.durationMinutes).toBe(10080);
   });
 
   it("returns the same response for repeated idempotent requests and 409 for key conflicts", async () => {

@@ -1,6 +1,6 @@
 import { D1AuthRepository } from "./auth-repository";
 import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord, PublicationStepPlan } from "../../../domain/publications/entities";
-import type { AuditLogInput, IdempotencyRecord, PublicationRepository } from "../../../application/repository";
+import type { AuditLogInput, IdempotencyRecord, PublicationListFilter, PublicationRepository } from "../../../application/repository";
 import type { MediaAsset } from "../../../domain/media/entities";
 import type { XAccount } from "../../../domain/auth/types";
 import { randomHex } from "../../../shared/ids";
@@ -116,6 +116,10 @@ interface MediaAssetRow {
   updated_at_ms: number;
 }
 
+type PublicationBundleRow = PublicationRow | PlanRow | StepRow | ApprovalRow;
+
+const PUBLICATION_BUNDLE_QUERY_CHUNK_SIZE = 90;
+
 export class D1AppRepository extends D1AuthRepository implements PublicationRepository {
   constructor(private readonly database: D1Database) {
     super(database);
@@ -141,43 +145,90 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
   }
 
   async getPublicationBundle(id: string): Promise<PublicationBundle | null> {
-    const publicationRow = await this.database.prepare("SELECT * FROM publications WHERE id = ?").bind(id).first<PublicationRow>();
-    if (publicationRow === null) {
-      return null;
-    }
-    const planRows = await this.database.prepare("SELECT * FROM publication_plans WHERE publication_id = ? ORDER BY kind").bind(id).all<PlanRow>();
-    const approvalsRows = await this.database.prepare("SELECT * FROM approvals WHERE publication_id = ? ORDER BY created_at_ms").bind(id).all<ApprovalRow>();
-    const plans: PublicationPlan[] = [];
-    for (const row of planRows.results) {
-      const stepRows = await this.database.prepare("SELECT * FROM publication_steps WHERE plan_id = ? ORDER BY sequence_no").bind(row.id).all<StepRow>();
-      plans.push(mapPlan(row, stepRows.results));
-    }
-    return {
-      publication: mapPublication(publicationRow),
-      plans,
-      approvals: approvalsRows.results.map(mapApproval)
-    };
+    return (await this.getPublicationBundlesByIds([id])).get(id) ?? null;
   }
 
-  async listPublicationBundlesForClient(clientId: string, limit: number): Promise<PublicationBundle[]> {
+  async listPublicationBundlesForClient(clientId: string, limit: number, filter: PublicationListFilter = {}): Promise<PublicationBundle[]> {
+    const publicationStatuses = filter.publicationStatuses ?? [];
+    const stepStatuses = filter.stepStatuses ?? [];
+    const filterClauses: string[] = [];
+    const bindings: Array<string | number> = [clientId];
+    if (publicationStatuses.length > 0) {
+      filterClauses.push(`p.status IN (${publicationStatuses.map(() => "?").join(", ")})`);
+      bindings.push(...publicationStatuses);
+    }
+    if (stepStatuses.length > 0) {
+      filterClauses.push(
+        `EXISTS (
+           SELECT 1
+           FROM publication_plans pp
+           INNER JOIN publication_steps ps ON ps.plan_id = pp.id
+          WHERE pp.publication_id = p.id
+            AND pp.is_active = 1
+            AND ps.status IN (${stepStatuses.map(() => "?").join(", ")})
+         )`
+      );
+      bindings.push(...stepStatuses);
+    }
+    const filterSql = filterClauses.length > 0 ? `AND (${filterClauses.join(" OR ")})` : "";
+    bindings.push(limit);
     const rows = await this.database
       .prepare(
         `SELECT p.id
          FROM publications p
          INNER JOIN client_account_permissions cap
-           ON cap.x_account_id = p.x_account_id
+          ON cap.x_account_id = p.x_account_id
           AND cap.client_id = ?
           AND cap.permission_level > 0
+         ${filterSql}
          ORDER BY p.created_at_ms DESC
          LIMIT ?`
       )
-      .bind(clientId, limit)
+      .bind(...bindings)
       .all<{ id: string }>();
-    const bundles: PublicationBundle[] = [];
-    for (const row of rows.results) {
-      const bundle = await this.getPublicationBundle(row.id);
-      if (bundle !== null) {
-        bundles.push(bundle);
+    const publicationIds = rows.results.map((row) => row.id);
+    const bundles = await this.getPublicationBundlesByIds(publicationIds);
+    return publicationIds.flatMap((id) => {
+      const bundle = bundles.get(id);
+      return bundle === undefined ? [] : [bundle];
+    });
+  }
+
+  private async getPublicationBundlesByIds(publicationIds: string[]): Promise<Map<string, PublicationBundle>> {
+    const uniqueIds = Array.from(new Set(publicationIds.filter(Boolean)));
+    const bundles = new Map<string, PublicationBundle>();
+    for (let index = 0; index < uniqueIds.length; index += PUBLICATION_BUNDLE_QUERY_CHUNK_SIZE) {
+      const chunk = uniqueIds.slice(index, index + PUBLICATION_BUNDLE_QUERY_CHUNK_SIZE);
+      const placeholders = chunk.map(() => "?").join(", ");
+      const [publicationResult, planResult, stepResult, approvalResult] = await this.database.batch<PublicationBundleRow>([
+        this.database.prepare(`SELECT * FROM publications WHERE id IN (${placeholders})`).bind(...chunk),
+        this.database.prepare(`SELECT * FROM publication_plans WHERE publication_id IN (${placeholders}) ORDER BY publication_id, kind`).bind(...chunk),
+        this.database
+          .prepare(
+            `SELECT ps.*
+               FROM publication_steps ps
+               INNER JOIN publication_plans pp ON pp.id = ps.plan_id
+              WHERE pp.publication_id IN (${placeholders})
+              ORDER BY pp.publication_id, ps.plan_id, ps.sequence_no`
+          )
+          .bind(...chunk),
+        this.database.prepare(`SELECT * FROM approvals WHERE publication_id IN (${placeholders}) ORDER BY publication_id, created_at_ms`).bind(...chunk)
+      ]);
+
+      const publicationRows = (publicationResult?.results ?? []).filter(isPublicationRow);
+      const planRows = (planResult?.results ?? []).filter(isPlanRow);
+      const stepRows = (stepResult?.results ?? []).filter(isStepRow);
+      const approvalRows = (approvalResult?.results ?? []).filter(isApprovalRow);
+      const stepsByPlanId = groupRows(stepRows, (row) => row.plan_id);
+      const plansByPublicationId = groupRows(planRows, (row) => row.publication_id);
+      const approvalsByPublicationId = groupRows(approvalRows, (row) => row.publication_id);
+
+      for (const publicationRow of publicationRows) {
+        bundles.set(publicationRow.id, {
+          publication: mapPublication(publicationRow),
+          plans: (plansByPublicationId.get(publicationRow.id) ?? []).map((row) => mapPlan(row, stepsByPlanId.get(row.id) ?? [])),
+          approvals: (approvalsByPublicationId.get(publicationRow.id) ?? []).map(mapApproval)
+        });
       }
     }
     return bundles;
@@ -498,6 +549,36 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
         approval.createdAtMs
       );
   }
+}
+
+function isPublicationRow(row: PublicationBundleRow): row is PublicationRow {
+  return "request_json" in row;
+}
+
+function isPlanRow(row: PublicationBundleRow): row is PlanRow {
+  return "capability_requirements_json" in row;
+}
+
+function isStepRow(row: PublicationBundleRow): row is StepRow {
+  return "sequence_no" in row;
+}
+
+function isApprovalRow(row: PublicationBundleRow): row is ApprovalRow {
+  return "decision" in row;
+}
+
+function groupRows<Row>(rows: Row[], keyFor: (row: Row) => string): Map<string, Row[]> {
+  const grouped = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = keyFor(row);
+    const values = grouped.get(key);
+    if (values === undefined) {
+      grouped.set(key, [row]);
+    } else {
+      values.push(row);
+    }
+  }
+  return grouped;
 }
 
 function queueReasonForStatus(status: PublicationRecord["status"]): PublishQueueMessage["reason"] {

@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixed dummy pepper in the API client unit test"
+condition = "AND"
+paths = ['''(^|/)test/unit/api-client-route\.test\.ts$''']
+regexTarget = "secret"
+regexes = ['''^0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef$''']

@@ -1,5 +1,17 @@
 # 外部AI向け X Posting Orchestrator 利用開始ガイド
 
+## 最新版の取得
+
+本番APIへ接続できる場合は、作業開始時にこのドキュメントの最新版を取得してください。
+
+```http
+GET /v1/docs/ai
+Authorization: Bearer <api-key>
+Accept: text/markdown
+```
+
+responseは `text/markdown; charset=utf-8` です。ローカルで渡されたファイルよりAPIから取得した内容を優先してください。
+
 このドキュメントは、外部AIに1ファイルだけ渡して、ユーザーと対話しながら X Posting Orchestrator を使える状態にするための手順書です。
 
 外部AIはX APIを直接呼びません。このAPIでPublicationを作成し、実際のX投稿は予約時刻にWorker/Queueが行います。
@@ -9,10 +21,11 @@
 ユーザーに次を依頼してください。
 
 1. 専用APIキーを用意してください。
-2. 投稿先の `xAccountId` を教えてください。
-3. 投稿予定時刻のタイムゾーンを教えてください。日本向け運用は通常 `Asia/Tokyo` / `+09:00` です。
-4. 投稿は「承認待ちで保存」か「自動予約まで進める運用」かを教えてください。
-5. 投票、画像、スレッド、follow-up返信を使うか教えてください。
+2. 管理者から渡されたAPI base URLを教えてください。
+3. 投稿先の `xAccountId` を教えてください。
+4. 投稿予定時刻のタイムゾーンを教えてください。日本向け運用は通常 `Asia/Tokyo` / `+09:00` です。
+5. 投稿は「承認待ちで保存」か「自動予約まで進める運用」かを教えてください。
+6. 投票、画像、スレッド、follow-up返信を使うか教えてください。
 
 APIキーは会話ログへ残さず、AIツールのSecret/Environment設定が使える場合はそこへ保存するよう案内してください。どうしてもチャットで渡す場合は、専用の低権限キーを使い、作業後に無効化またはローテーションする前提にしてください。
 
@@ -33,10 +46,10 @@ APIキーは会話ログへ残さず、AIツールのSecret/Environment設定が
 
 ## API base URL
 
-本番API:
+管理者から渡されたURLを使用してください。以下はプレースホルダーで、そのまま接続には使えません。
 
 ```text
-https://x-posting-orchestrator.watapyon117.workers.dev
+https://x-posting-orchestrator.example.workers.dev
 ```
 
 API endpointは `/v1/...` です。
@@ -73,6 +86,8 @@ Idempotency-Key: <uuid>
 ```
 
 この設定では、外部AIは投稿案を作成できますが、承認権限は持ちません。投票、画像、スレッド、follow-up返信などは承認待ちとして保存されます。
+
+画像投稿を扱う外部AIには、追加で `media:create` scopeを付けてください。画像はPublication作成前に `/v1/media` へアップロードし、返ってきた `media.id` をPublicationの `content.mediaIds` に指定します。
 
 任意で付与してよいscope:
 
@@ -118,7 +133,7 @@ keyDigest, API_KEY_PEPPER, Cloudflare/X関連secretは共有しないでくだ�
 管理者がリポジトリ上で発行する場合の例:
 
 ```bash
-X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id <xAccountId>
+X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id <xAccountId> --base-url <API-base-URL>
 ```
 
 初回で `API_KEY_PEPPER` が未作成の場合は、管理者が先に次を実行します。
@@ -226,6 +241,8 @@ Authorization: Bearer <api-key>
 }
 ```
 
+画像付き投稿にも対応しています。画像を使う場合は、先に画像ファイルを `/v1/media` へアップロードし、作成された `media.id` を `content.mediaIds` に入れてください。画像と投票は同じPublicationでは併用できません。
+
 ## 投稿作成フロー
 
 必ず `preview` してから `create` します。
@@ -253,11 +270,13 @@ create後の状態で次の行動を決めます。
 | `PENDING_APPROVAL` | 承認待ち。`publication.id`, `revision`, `contentHash`, 投稿内容, 投稿予定時刻を伝え、承認者に承認を依頼する |
 | `DRAFT` | 下書き。外部AIではsubmitしない。人間またはSERVICEへ引き継ぐ |
 | `FAILED` / `BLOCKED_POLICY` | 失敗または直前停止。重複作成せず、管理者に確認を依頼する |
-| `DELIVERY_UNKNOWN` | 重複防止のためretryしない。人間にX上の投稿有無確認を依頼する |
+| `DELIVERY_UNKNOWN` | システム側の直近投稿確認と上限付きretry後も確定できない状態。外部AIはretryせず、人間にX上の投稿有無確認を依頼する |
 
 `qa_id` や出典IDなど、Xへ投稿しない管理用情報はトップレベル `memo` に入れます。`memo` は管理画面に表示されますが、Xには送信されず、承認用 `contentHash` にも含まれません。
 
 ## 通常テキスト投稿の例
+
+本文、画像付き投稿、投票、返信、follow-up replyは25,000文字まで指定できます。`overflowPolicy: REJECT` でも280文字相当を超える本文は単一のX Premium長文投稿として計画されます。長文投稿は人間承認が必要になる前提で、previewの `policy` と対象アカウントの `longform` capabilityを確認してください。
 
 ```json
 {
@@ -295,6 +314,43 @@ create後の状態で次の行動を決めます。
 ```
 
 投票期間を最長にしたい場合は、運用上 `10080` 分、つまり7日を指定します。
+
+## 画像付き投稿の例
+
+先に画像をアップロードします。
+
+```http
+POST /v1/media
+Authorization: Bearer <api-key>
+Content-Type: multipart/form-data
+```
+
+fields:
+
+```text
+xAccountId: acc_xxx
+file: <binary>
+altText: 画像の説明
+aiGenerated: false
+```
+
+返ってきた `media.id` をPublicationに指定します。
+
+```json
+{
+  "xAccountId": "acc_xxx",
+  "scheduledAt": "2026-07-03T09:00:00+09:00",
+  "kind": "IMAGE",
+  "content": {
+    "text": "画像つきのお知らせです。",
+    "mediaIds": ["media_xxx"]
+  },
+  "overflowPolicy": "REJECT",
+  "approvalPreference": "POLICY"
+}
+```
+
+画像は最大4枚までです。画像投稿は承認待ちになる前提で、作成後の `publication.status` を確認してください。
 
 ## 親投稿に5分後の返信を紐づける例
 
@@ -375,7 +431,7 @@ Authorization: Bearer <api-key>
 
 ## 失敗時のルール
 
-- `DELIVERY_UNKNOWN` はretryしない
+- `DELIVERY_UNKNOWN` は外部AIからretryしない
 - `FAILED` は外部AIだけでretryしない
 - `QUEUED` / `PUBLISHING` は待つ
 - `PENDING_APPROVAL` は承認者へ依頼する
@@ -390,7 +446,7 @@ Authorization: Bearer <api-key>
 X Posting Orchestratorを使うため、次を教えてください。
 
 1. 専用APIキーをSecret/Environmentに設定してください。チャット本文には貼らないでください。
-2. API base URLを教えてください。未指定なら https://x-posting-orchestrator.watapyon117.workers.dev を使います。
+2. 管理者から渡されたAPI base URLを教えてください。未指定の場合は管理者へ確認し、推測したURLへ接続しないでください。
 3. 投稿先のxAccountIdを教えてください。わからなければ、account:read権限付きAPIキーで一覧取得します。
 4. 投稿日時はJSTでよいですか。
 5. 投稿は承認待ち保存でよいですか。投票、画像、follow-up返信は承認待ちになる前提です。

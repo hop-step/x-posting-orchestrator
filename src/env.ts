@@ -12,6 +12,12 @@ export interface Env {
   API_KEY_PEPPER: string;
   PUBLIC_BASE_URL: string;
   ALLOWED_CORS_ORIGINS?: string;
+  DISCORD_APPROVAL_WEBHOOK_URL?: string;
+  DISCORD_FAILURE_WEBHOOK_URL?: string;
+  DISCORD_BOT_TOKEN?: string;
+  DISCORD_APPROVAL_CHANNEL_ID?: string;
+  DISCORD_FAILURE_CHANNEL_ID?: string;
+  DISCORD_PUBLIC_KEY?: string;
   SCHEDULE_GRACE_SECONDS?: string;
   LEASE_DURATION_SECONDS?: string;
   DEFAULT_MAX_THREAD_PARTS?: string;
@@ -23,6 +29,9 @@ export interface Env {
   OAUTH_STATE_TTL_MINUTES?: string;
   TOKEN_REFRESH_MARGIN_MINUTES?: string;
   MAX_DELIVERY_ATTEMPTS?: string;
+  DELIVERY_UNKNOWN_MAX_ATTEMPTS?: string;
+  DELIVERY_UNKNOWN_RETRY_DELAY_SECONDS?: string;
+  DELIVERY_UNKNOWN_VERIFICATION_WINDOW_SECONDS?: string;
   DUPLICATE_CONTENT_WINDOW_HOURS?: string;
   LIVE_X_TEST?: string;
   X_TEST_ACCOUNT_ID?: string;
@@ -40,6 +49,9 @@ export interface AppConfig {
   oauthStateTtlMinutes: number;
   tokenRefreshMarginMinutes: number;
   maxDeliveryAttempts: number;
+  deliveryUnknownMaxAttempts: number;
+  deliveryUnknownRetryDelaySeconds: number;
+  deliveryUnknownVerificationWindowSeconds: number;
   duplicateContentWindowHours: number;
 }
 
@@ -56,6 +68,9 @@ export function loadConfig(env: Env): AppConfig {
     oauthStateTtlMinutes: numberFromEnv(env.OAUTH_STATE_TTL_MINUTES, 10),
     tokenRefreshMarginMinutes: numberFromEnv(env.TOKEN_REFRESH_MARGIN_MINUTES, 10),
     maxDeliveryAttempts: numberFromEnv(env.MAX_DELIVERY_ATTEMPTS, 5),
+    deliveryUnknownMaxAttempts: Math.max(1, numberFromEnv(env.DELIVERY_UNKNOWN_MAX_ATTEMPTS, 2)),
+    deliveryUnknownRetryDelaySeconds: Math.max(1, numberFromEnv(env.DELIVERY_UNKNOWN_RETRY_DELAY_SECONDS, 60)),
+    deliveryUnknownVerificationWindowSeconds: Math.max(60, numberFromEnv(env.DELIVERY_UNKNOWN_VERIFICATION_WINDOW_SECONDS, 600)),
     duplicateContentWindowHours: numberFromEnv(env.DUPLICATE_CONTENT_WINDOW_HOURS, 24)
   };
 }

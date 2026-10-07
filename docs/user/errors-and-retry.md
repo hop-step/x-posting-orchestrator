@@ -67,6 +67,12 @@ Publicationを再取得し、最新の値で操作してください。
 
 管理者に対象Xアカウントのcapability確認を依頼してください。
 
+### `TEXT_TOO_LONG` / `FOLLOW_UP_TOO_LONG`
+
+単一投稿またはfollow-up replyが、X Premium長文投稿の上限である25,000文字を超えています。
+
+本文を25,000文字以内に短くしてください。`THREAD` を指定した場合も、Publicationへ入力する本文自体の上限は25,000文字です。
+
 ## Retry
 
 retryできるのは、投稿未作成と判断できる明示的失敗だけです。
@@ -77,11 +83,13 @@ Authorization: Bearer <api-key>
 Idempotency-Key: <uuid>
 ```
 
-`DELIVERY_UNKNOWN` はretryできません。
+`DELIVERY_UNKNOWN` は、利用者APIから直接retryできません。
 
 ## Delivery Unknown
 
 `DELIVERY_UNKNOWN` は、Xに投稿された可能性がある状態です。
+
+Workerは最終的な `DELIVERY_UNKNOWN` にする前に、対象Xアカウントの直近投稿を確認します。本文、返信先、投稿時刻付近が一致するPostが見つかれば、X Post IDを保存して投稿済みにします。見つからない場合だけ、標準では最大2回まで再実行します。
 
 利用者側では、自分で再送せず、管理者または承認者にreconcileを依頼してください。
 

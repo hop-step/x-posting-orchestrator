@@ -16,7 +16,7 @@
 | `AWAITING_FOLLOW_UP` | ルート投稿は成功し、将来のfollow-up待ち |
 | `PUBLISHED` | 予定されたStepがすべて成功 |
 | `FAILED` | 投稿未作成と判断できる明示的失敗 |
-| `DELIVERY_UNKNOWN` | 投稿された可能性があり、自動再送禁止 |
+| `DELIVERY_UNKNOWN` | 投稿された可能性があり、手動確認が必要 |
 | `RETRY_SCHEDULED` | 明示的失敗またはrate limit後の再実行待ち |
 | `BLOCKED_POLICY` | 実行直前の再検証で停止 |
 | `REJECTED` | 人間が却下 |
@@ -89,7 +89,9 @@ ConsumerはX APIを呼ぶ前に、少なくとも次を確認します。
 - response解析不能
 - post IDがない成功風response
 
-この場合は `DELIVERY_UNKNOWN` にして停止します。自動retryはしません。人間がX上で投稿有無を確認し、`reconcile` で確定します。
+この場合、Consumerはまず対象Xアカウントの直近投稿を確認します。本文、返信先、投稿時刻付近が一致するPostが見つかれば、その `xPostId` を保存して `PUBLISHED` として扱います。
+
+見つからない場合は、設定上限まで `RETRY_SCHEDULED` として再実行します。標準は最大2回です。上限後も確認できない場合、または確認API自体が使えない場合は `DELIVERY_UNKNOWN` にして停止します。人間がX上で投稿有無を確認し、`reconcile` で確定します。
 
 ## 安全ルール
 
@@ -98,6 +100,6 @@ ConsumerはX APIを呼ぶ前に、少なくとも次を確認します。
 - 承認後に内容が変わったら承認を無効化する
 - 同じHTTP request再送でPublicationを重複作成しない
 - Queue重複配信で同じX投稿を重複作成しない
-- Xへの送信結果が不明な場合は自動再送しない
+- Xへの送信結果が不明な場合は、直近投稿確認なしに再送しない
 - 投稿直前にも権限、承認、revision、contentHash、policyを再確認する
 - 重要操作はaudit logへ残す

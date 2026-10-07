@@ -58,7 +58,10 @@ export function evaluatePolicy(params: {
   if (primary.strategy !== "STANDARD_SINGLE") {
     reasons.push("NON_STANDARD_PLAN_REQUIRES_HUMAN_APPROVAL");
   }
-  if (weightedLength(request.content.text) > STANDARD_POST_WEIGHTED_LENGTH) {
+  if (
+    weightedLength(request.content.text) > STANDARD_POST_WEIGHTED_LENGTH ||
+    request.followUps.some((followUp) => weightedLength(followUp.content.text) > STANDARD_POST_WEIGHTED_LENGTH)
+  ) {
     reasons.push("LONG_TEXT_REQUIRES_HUMAN_APPROVAL");
   }
   if (urlPattern.test(request.content.text)) {
@@ -73,7 +76,7 @@ export function evaluatePolicy(params: {
   if (permission.allowedHours !== null && !permission.allowedHours.includes(new Date(request.scheduledAtMs).getUTCHours())) {
     reasons.push("OUTSIDE_ALLOWED_HOURS_REQUIRES_HUMAN_APPROVAL");
   }
-  if (account.longformCapability !== "ENABLED" && primary.strategy === "LONGFORM_SINGLE") {
+  if (account.longformCapability !== "ENABLED" && primary.capabilityRequirements.longform === "ENABLED") {
     reasons.push("LONGFORM_CAPABILITY_NOT_ENABLED");
   }
 

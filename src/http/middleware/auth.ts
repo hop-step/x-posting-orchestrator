@@ -23,7 +23,17 @@ export const optionalAuthMiddleware = createMiddleware<AppBindings>(async (c, ne
   if (!ok) {
     throw unauthorized();
   }
-  await repository.updateClientLastUsed(client.id, Date.now());
+  const lastUsedUpdate = repository.updateClientLastUsed(client.id, Date.now()).catch((error: unknown) => {
+    c.get("logger")?.log("warn", "API_CLIENT_LAST_USED_UPDATE_FAILED", {
+      clientId: client.id,
+      errorName: error instanceof Error ? error.name : "UnknownError"
+    });
+  });
+  try {
+    c.executionCtx.waitUntil(lastUsedUpdate);
+  } catch {
+    await lastUsedUpdate;
+  }
   c.set("auth", { client, requestId: c.get("requestId") });
   await next();
 });

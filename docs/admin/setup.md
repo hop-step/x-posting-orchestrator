@@ -1,181 +1,21 @@
 # 管理者セットアップ
 
-この手順は、CloudflareとX Developer Platformのリソースを準備し、本番または検証環境でWorkerを動かす管理者向けです。
+Cloudflareへの初回セットアップ手順は[README](../../README.md)にまとめています。
 
-## 1. 依存関係を入れる
+1. Node.js / pnpmの準備と依存関係のインストール
+2. D1、R2、Queues、DLQの作成とMigration、初回デプロイ
+3. APIキーpepper、暗号化キー、X OAuth、Basic認証のSecret登録
+4. 管理用API Clientの生成とD1への初回登録
+5. X Developer Appの設定と管理画面からのアカウント接続
+6. 外部AI用API Clientの発行と権限設定
+7. Discordへのリンク通知とローカル動作確認
 
-```bash
-corepack enable
-pnpm install
-pnpm typecheck
-pnpm test
-pnpm build
-```
+APIキー生成コマンドだけでは、初回管理用ClientのD1登録は完了しません。READMEのSQL登録まで実施してください。既存環境ではpepperを新規生成して置き換えず、既存管理者キーを使ったAPI Client発行を利用します。
 
-## 2. Cloudflare Resourceを作成する
+## 関連する運用手順
 
-```bash
-wrangler d1 create x-posting-orchestrator
-wrangler r2 bucket create x-posting-media
-wrangler queues create x-publish
-wrangler queues create x-publish-dlq
-```
-
-D1作成後、`wrangler.jsonc` の `database_id` を実IDへ差し替えます。
-
-## 3. Migrationを適用する
-
-ローカル:
-
-```bash
-wrangler d1 migrations apply x-posting-orchestrator --local
-```
-
-リモート:
-
-```bash
-wrangler d1 migrations apply x-posting-orchestrator --remote
-```
-
-## 4. Worker Secretsを登録する
-
-`API_KEY_PEPPER` は初回セットアップコマンドで生成して登録できます。
-
-```bash
-pnpm init-api-key-pepper
-```
-
-このコマンドは `.secrets/api-key-pepper` に同じ値を保存します。Cloudflare側に既に `API_KEY_PEPPER` があり、ローカル値がない場合は、既存API Clientを壊さないため上書きせず停止します。
-
-```bash
-wrangler secret put TOKEN_ENCRYPTION_KEY_V1
-wrangler secret put X_CLIENT_ID
-wrangler secret put X_CLIENT_SECRET
-wrangler secret put PUBLIC_BASE_URL
-```
-
-`TOKEN_ENCRYPTION_KEY_V1` は32 bytesのhexまたはbase64を使います。
-
-例: 32 bytes hex
-
-```bash
-openssl rand -hex 32
-```
-
-## 5. X Developer Appを設定する
-
-X Developer PortalでOAuth 2.0 Authorization Code Flow with PKCEを有効化します。
-
-Callback URL:
-
-```text
-<PUBLIC_BASE_URL>/v1/x/oauth/callback
-```
-
-必要scope:
-
-```text
-tweet.read tweet.write users.read offline.access media.write
-```
-
-## 6. 管理用API Clientを作る
-
-APIキーを生成します。
-
-```bash
-API_KEY_PEPPER=<same-secret> pnpm create-api-key SERVICE "ops-client"
-```
-
-`.secrets/api-key-pepper` がある場合は環境変数を省略できます。
-
-```bash
-pnpm create-api-key SERVICE "ops-client"
-```
-
-本番稼働後に外部AI用Clientを追加する場合は、管理用APIキーで本番Workerに発行させます。
-
-```bash
-X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id acc_xxx
-```
-
-出力される値:
-
-- `apiKey`: 呼び出し元へ渡す平文キー
-- `keyPrefix`: DB保存用
-- `keyDigest`: DB保存用
-
-`apiKey` は再生成しない限り再表示できません。安全な場所に保管します。
-
-## 7. X Account recordを作る
-
-管理用API Clientで呼びます。
-
-```http
-POST /v1/x/accounts
-Authorization: Bearer <ops-api-key>
-Content-Type: application/json
-```
-
-```json
-{
-  "name": "Test account",
-  "xUsername": "example"
-}
-```
-
-作成直後は `AUTH_ERROR` です。OAuth接続後に `ACTIVE` になります。
-
-## 8. OAuth接続する
-
-```http
-GET /v1/x/oauth/authorize?xAccountId=acc_xxx
-Authorization: Bearer <ops-api-key>
-```
-
-Xの認可画面へリダイレクトされます。認可後、callbackでaccess tokenとrefresh tokenを暗号化して保存します。
-
-## 9. Client Account Permissionを設定する
-
-MVPでは管理APIがまだないため、`client_account_permissions` へ運用側で投入します。
-
-必要な値:
-
-- `client_id`
-- `x_account_id`
-- `permission_level`
-- `max_thread_parts`
-- `allowed_hours_json`
-
-Level設計は [共通: 権限モデル](../common/permission-model.md) を参照してください。
-
-## 10. Capabilityを確認する
-
-Live Smoke Testで対象アカウントの実挙動を確認し、成功後にだけ更新します。
-
-```http
-PATCH /v1/x/accounts/:id/capabilities
-Authorization: Bearer <ops-api-key>
-Content-Type: application/json
-```
-
-```json
-{
-  "longformCapability": "ENABLED",
-  "selfReplyCapability": "ENABLED"
-}
-```
-
-## 11. Deployする
-
-```bash
-wrangler deploy
-```
-
-Deploy前には次を通してください。
-
-```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-```
+- [API Clientとアカウント別権限](api-client-management.md)
+- [XアカウントCapability](x-account-capabilities.md)
+- [運用とログ](operations.md)
+- [DLQと送信結果不明の確認](dlq-and-reconcile.md)
+- [公開前の機密情報監査](public-source-audit.md)

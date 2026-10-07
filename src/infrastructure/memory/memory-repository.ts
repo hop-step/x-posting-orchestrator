@@ -2,7 +2,7 @@ import type { AuthRepository } from "../../domain/auth/authorization";
 import type { ApiClient, ClientAccountPermission, XAccount } from "../../domain/auth/types";
 import type { MediaAsset } from "../../domain/media/entities";
 import type { ApprovalRecord, PublicationBundle, PublicationRecord } from "../../domain/publications/entities";
-import type { AuditLogInput, IdempotencyRecord, PublicationRepository, SeedData } from "../../application/repository";
+import type { AuditLogInput, IdempotencyRecord, PublicationListFilter, PublicationRepository, SeedData } from "../../application/repository";
 import { randomHex } from "../../shared/ids";
 import type { PublishQueueMessage } from "../../workers/messages";
 
@@ -70,12 +70,13 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
     return bundle === undefined ? null : clone(bundle);
   }
 
-  async listPublicationBundlesForClient(clientId: string, limit: number): Promise<PublicationBundle[]> {
+  async listPublicationBundlesForClient(clientId: string, limit: number, filter: PublicationListFilter = {}): Promise<PublicationBundle[]> {
     return [...this.publications.values()]
       .filter((bundle) => {
         const permission = this.permissions.get(permissionKey(clientId, bundle.publication.xAccountId));
         return permission !== undefined && permission.permissionLevel > 0;
       })
+      .filter((bundle) => matchesPublicationListFilter(bundle, filter))
       .sort((a, b) => b.publication.createdAtMs - a.publication.createdAtMs)
       .slice(0, limit)
       .map((bundle) => clone(bundle));
@@ -206,6 +207,19 @@ function permissionKey(clientId: string, xAccountId: string): string {
 
 function idempotencyKey(clientId: string, key: string): string {
   return `${clientId}:${key}`;
+}
+
+function matchesPublicationListFilter(bundle: PublicationBundle, filter: PublicationListFilter): boolean {
+  const publicationStatuses = filter.publicationStatuses ?? [];
+  const stepStatuses = filter.stepStatuses ?? [];
+  if (publicationStatuses.length === 0 && stepStatuses.length === 0) {
+    return true;
+  }
+  if (publicationStatuses.includes(bundle.publication.status)) {
+    return true;
+  }
+  const activePlan = bundle.plans.find((plan) => plan.id === bundle.publication.activePlanId) ?? bundle.plans.find((plan) => plan.isActive);
+  return activePlan?.steps.some((step) => stepStatuses.includes(step.status)) ?? false;
 }
 
 function clone<T>(value: T): T {

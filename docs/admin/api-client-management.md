@@ -40,7 +40,7 @@ pnpm create-api-key AI "external-ai-client"
 本番稼働後に外部AI用Clientを追加する場合は、既存の管理用APIキーを使って本番Workerに発行させます。この方法ではローカルに `API_KEY_PEPPER` は不要で、D1登録まで自動で行われます。
 
 ```bash
-X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id acc_xxx
+X_POSTING_ADMIN_API_KEY=<account:manage付きの既存APIキー> pnpm create-remote-api-client AI "external-ai-client" --x-account-id acc_xxx --base-url <自分のAPI-base-URL>
 ```
 
 初回セットアップとAPIキー生成を同時に行う場合:

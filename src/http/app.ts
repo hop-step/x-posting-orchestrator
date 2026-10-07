@@ -6,13 +6,15 @@ import { optionalAuthMiddleware, requireAuthMiddleware } from "./middleware/auth
 import { requestIdMiddleware } from "./middleware/request-id";
 import { adminRoutes } from "./routes/admin";
 import { apiClientRoutes } from "./routes/api-clients";
+import { discordRoutes } from "./routes/discord";
+import { documentationRoutes } from "./routes/documentation";
 import { healthRoutes } from "./routes/health";
 import { mediaRoutes } from "./routes/media";
 import { publicationRoutes } from "./routes/publications";
 import { xAccountRoutes, xOAuthCallbackRoutes } from "./routes/x-accounts";
 import type { AppBindings } from "./context";
 
-export function createApp(): Hono<AppBindings> {
+export function createApp(aiDocumentationMarkdown: string): Hono<AppBindings> {
   const app = new Hono<AppBindings>();
 
   app.onError((error, c) => {
@@ -55,7 +57,9 @@ export function createApp(): Hono<AppBindings> {
   app.route("/", adminRoutes());
   app.route("/", healthRoutes());
   app.route("/", xOAuthCallbackRoutes());
+  app.route("/", discordRoutes());
   app.use("/v1/*", optionalAuthMiddleware, requireAuthMiddleware);
+  app.route("/", documentationRoutes(aiDocumentationMarkdown));
   app.route("/", mediaRoutes());
   app.route("/", publicationRoutes());
   app.route("/", apiClientRoutes());

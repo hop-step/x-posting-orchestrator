@@ -18,7 +18,7 @@ describe("retry and reconcile operations", () => {
       tokenManager: null,
       mediaBucket: null,
       clock,
-      config: testConfig,
+      config: { ...testConfig, deliveryUnknownMaxAttempts: 1 },
       message
     });
     await expect(service.retry(publication.id, human, "idem-retry-denied", requestMeta())).rejects.toMatchObject({ httpStatus: 409 });

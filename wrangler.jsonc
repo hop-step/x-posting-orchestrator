@@ -3,6 +3,13 @@
   "name": "x-posting-orchestrator",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-21",
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.md"],
+      "fallthrough": true
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
@@ -19,8 +26,14 @@
     {
       "binding": "DB",
       "database_name": "x-posting-orchestrator",
-      "database_id": "878293cf-d4d2-45c0-97c5-5a7bc67cc988",
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "preview_database_id": "x-posting-orchestrator-local"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "x-posting-media"
     }
   ],
   "queues": {
@@ -41,7 +54,7 @@
     ]
   },
   "vars": {
-    "PUBLIC_BASE_URL": "https://x-posting-orchestrator.watapyon117.workers.dev",
+    "PUBLIC_BASE_URL": "https://x-posting-orchestrator.example.workers.dev",
     "ALLOWED_CORS_ORIGINS": "",
     "SCHEDULE_GRACE_SECONDS": "120",
     "LEASE_DURATION_SECONDS": "120",
@@ -54,6 +67,9 @@
     "OAUTH_STATE_TTL_MINUTES": "10",
     "TOKEN_REFRESH_MARGIN_MINUTES": "10",
     "MAX_DELIVERY_ATTEMPTS": "5",
+    "DELIVERY_UNKNOWN_MAX_ATTEMPTS": "2",
+    "DELIVERY_UNKNOWN_RETRY_DELAY_SECONDS": "60",
+    "DELIVERY_UNKNOWN_VERIFICATION_WINDOW_SECONDS": "600",
     "DUPLICATE_CONTENT_WINDOW_HOURS": "24"
   }
 }

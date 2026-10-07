@@ -3,13 +3,15 @@ import { loadConfig, type Env } from "./env";
 import { TokenManager } from "./application/token-manager";
 import { D1AppRepository } from "./infrastructure/d1/repositories/app-repository";
 import { XRestAdapter } from "./infrastructure/x/x-rest-adapter";
+import { sendDiscordPublicationFailureNotification, type DiscordPublicationFailureStatus } from "./infrastructure/discord/approval-notifier";
 import { systemClock } from "./shared/clock";
 import { consoleLogger, errorMetadata } from "./shared/logger";
 import { publishQueueMessage } from "./workers/publisher-consumer";
 import { enqueueDuePublications } from "./workers/scheduler";
 import type { PublishQueueMessage } from "./workers/messages";
+import aiDocumentationMarkdown from "../docs/ai/external-ai-handoff.md";
 
-const app = createApp();
+const app = createApp(aiDocumentationMarkdown);
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
@@ -45,6 +47,9 @@ export default {
           message: body
         });
         consoleLogger.log("info", "PUBLICATION_QUEUE_MESSAGE_HANDLED", { ...messageLogFields(body), result });
+        if (isPublicationFailureResult(result)) {
+          await notifyPublicationFailure(env, repository, body.publicationId, result);
+        }
       } catch (error) {
         const metadata = errorMetadata(error);
         consoleLogger.log("error", "PUBLICATION_QUEUE_CONSUMER_FAILED", { ...messageLogFields(body), error: metadata });
@@ -54,6 +59,41 @@ export default {
     }
   }
 };
+
+function isPublicationFailureResult(result: string): result is DiscordPublicationFailureStatus {
+  return result === "FAILED" || result === "DELIVERY_UNKNOWN" || result === "BLOCKED_POLICY";
+}
+
+async function notifyPublicationFailure(
+  env: Env,
+  repository: D1AppRepository,
+  publicationId: string,
+  result: DiscordPublicationFailureStatus
+): Promise<void> {
+  try {
+    const notification = await sendDiscordPublicationFailureNotification({
+      env,
+      repository,
+      publicationId,
+      status: result,
+      logger: consoleLogger,
+      nowMs: systemClock.nowMs()
+    });
+    consoleLogger.log(notification.status === "FAILED" ? "warn" : "info", "DISCORD_PUBLICATION_FAILURE_NOTIFICATION_RESULT", {
+      publicationId,
+      result,
+      notificationStatus: notification.status,
+      reason: notification.reason,
+      httpStatus: notification.httpStatus
+    });
+  } catch (error) {
+    consoleLogger.log("error", "DISCORD_PUBLICATION_FAILURE_NOTIFICATION_UNHANDLED", {
+      publicationId,
+      result,
+      error: errorMetadata(error)
+    });
+  }
+}
 
 function messageLogFields(message: PublishQueueMessage): Record<string, unknown> {
   return {

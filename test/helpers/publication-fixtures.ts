@@ -20,6 +20,9 @@ export const testConfig: AppConfig = {
   oauthStateTtlMinutes: 10,
   tokenRefreshMarginMinutes: 10,
   maxDeliveryAttempts: 5,
+  deliveryUnknownMaxAttempts: 2,
+  deliveryUnknownRetryDelaySeconds: 60,
+  deliveryUnknownVerificationWindowSeconds: 600,
   duplicateContentWindowHours: 24
 };
 

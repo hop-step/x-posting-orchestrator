@@ -9,6 +9,12 @@ export interface CreatePostInput {
   accessToken: string | null;
 }
 
+export interface ListRecentPostsInput {
+  userId: string;
+  maxResults: number;
+  accessToken: string | null;
+}
+
 export interface UploadMediaInput {
   bytes: Uint8Array;
   mimeType: string;
@@ -26,6 +32,21 @@ export interface CreatePostSuccess {
   type: "SUCCESS";
   xPostId: string;
   text: string;
+}
+
+export interface RecentPost {
+  id: string;
+  text: string;
+  createdAtMs: number | null;
+  referencedPosts: Array<{
+    type: string;
+    id: string;
+  }>;
+}
+
+export interface ListRecentPostsSuccess {
+  type: "SUCCESS";
+  posts: RecentPost[];
 }
 
 export interface XRateLimited {
@@ -69,7 +90,14 @@ export type UploadMediaResult =
   | XDefiniteFailure
   | XDeliveryUnknown;
 
+export type ListRecentPostsResult =
+  | ListRecentPostsSuccess
+  | XRateLimited
+  | XDefiniteFailure
+  | XDeliveryUnknown;
+
 export interface XClient {
   uploadMedia(input: UploadMediaInput): Promise<UploadMediaResult>;
   createPost(input: CreatePostInput): Promise<CreatePostResult>;
+  listRecentPosts(input: ListRecentPostsInput): Promise<ListRecentPostsResult>;
 }

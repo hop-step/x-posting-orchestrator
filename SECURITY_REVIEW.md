@@ -8,7 +8,7 @@
 - X投稿は Queue Consumer のみが `XClient` を呼ぶ。
 - Queue message は revision/contentHash/leaseToken/status を再検証。
 - 成功済み step は `xPostId` を見て再送しない。
-- Delivery Unknown は自動retryせず、reconcile が必要。
+- Delivery Unknown候補は本文・返信先・時刻付近を照合し、未投稿と確認できた場合のみ上限付きで再実行。照合できない場合は停止し、reconcileが必要。
 - 承認後の編集は revision を増やし、active approval を無効化。
 - OAuth state と PKCE verifier は10分期限・一回利用・暗号化保存。
 - Access/Refresh token は AES-256-GCM で暗号化。

@@ -61,7 +61,15 @@ export class D1AuthRepository implements AuthRepository {
   }
 
   async updateClientLastUsed(clientId: string, nowMs: number): Promise<void> {
-    await this.db.prepare("UPDATE api_clients SET last_used_at_ms = ?, updated_at_ms = ? WHERE id = ?").bind(nowMs, nowMs, clientId).run();
+    await this.db
+      .prepare(
+        `UPDATE api_clients
+            SET last_used_at_ms = MAX(COALESCE(last_used_at_ms, 0), ?),
+                updated_at_ms = MAX(updated_at_ms, ?)
+          WHERE id = ?`
+      )
+      .bind(nowMs, nowMs, clientId)
+      .run();
   }
 
   async getXAccount(id: string): Promise<XAccount | null> {
