@@ -38,7 +38,15 @@ wrangler d1 migrations apply x-posting-orchestrator --local
 wrangler d1 migrations apply x-posting-orchestrator --remote
 ```
 
-本番では、Migration後にヘルスチェックと簡単なpreview APIを確認します。
+本番用設定をGit管理外の`wrangler.production.jsonc`に保存している場合は、`--config wrangler.production.jsonc`も指定します。本番では、Migration後にヘルスチェックと簡単なpreview APIを確認します。
+
+### 予約検索の読み取り量
+
+`0003_scheduler_due_index.sql`は予約検索用の索引だけを置き換えます。投稿データ、毎分Cron、予約時刻、実行権の期限、再試行の条件は変更しません。
+
+`idx_publications_pending_due`は`SCHEDULED`、`QUEUED`、`AWAITING_FOLLOW_UP`、`RETRY_SCHEDULED`だけを対象にし、実行時刻順の検索を索引内で完結させます。実行済みの履歴が増えても、毎分の予約確認でその履歴を読む必要はありません。
+
+ローカルD1の仮データでは、対象0件時の読み取りが9行から1行、未処理1,000件・実行権あり3件から25件を取得する場合は121行から28行になりました。`test/integration/d1-scheduler.test.ts`が実際のrepositoryのSQLで読み取り予算と投稿対象の一致を検証します。本番の行数はD1の`meta.rows_read`または`wrangler d1 insights`で別途確認します。
 
 ## Token再接続
 

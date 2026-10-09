@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const xAccounts = sqliteTable("x_accounts", {
@@ -100,7 +101,9 @@ export const publications = sqliteTable(
     updatedAtMs: integer("updated_at_ms").notNull()
   },
   (table) => ({
-    dueIdx: index("idx_publications_due").on(table.status, table.nextActionAtMs),
+    dueIdx: index("idx_publications_pending_due")
+      .on(table.nextActionAtMs, table.leaseUntilMs, table.id, table.revision, table.contentHash, table.status)
+      .where(sql`${table.status} IN ('SCHEDULED', 'QUEUED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')`),
     accountCreatedIdx: index("idx_publications_account_created").on(table.xAccountId, table.createdAtMs),
     creatorCreatedIdx: index("idx_publications_creator_created").on(table.createdByClientId, table.createdAtMs)
   })

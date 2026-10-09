@@ -31,6 +31,7 @@
     "@types/node": "^24.0.3",
     "drizzle-kit": "^0.31.1",
     "eslint": "^9.29.0",
+    "miniflare": "4.20260617.1",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.34.1",
