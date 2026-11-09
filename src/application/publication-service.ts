@@ -22,7 +22,7 @@ import { assertCancellable, assertEditable } from "../domain/publications/state-
 import { evaluatePolicy } from "../domain/policies/policy-engine";
 import { runIdempotent, type IdempotentResult } from "./idempotency";
 import { activeApproval, type PublicationRepository } from "./repository";
-import type { PublicationListFilter } from "./repository";
+import type { PublicationListFilter, PublicationListPage } from "./repository";
 
 export interface PublicationServiceDeps {
   repository: PublicationRepository;
@@ -122,9 +122,15 @@ export class PublicationService {
     return bundle;
   }
 
-  async list(client: ApiClient, limit = 50, filter: PublicationListFilter = {}): Promise<PublicationBundle[]> {
+  async list(client: ApiClient, limit = 50, filter: PublicationListFilter = {}): Promise<PublicationListPage> {
     assertScope(client.scopes, "publication:read", client.actorType);
-    return this.deps.repository.listPublicationBundlesForClient(client.id, Math.min(Math.max(limit, 1), 100), filter);
+    if (filter.xAccountId !== undefined) {
+      const permission = await this.deps.repository.getClientAccountPermission(client.id, filter.xAccountId);
+      if (permission === null || permission.permissionLevel <= 0) {
+        throw notFound();
+      }
+    }
+    return this.deps.repository.listPublicationBundlesForClient(client.id, Math.min(Math.max(Math.trunc(limit), 1), 100), filter);
   }
 
   async patch(

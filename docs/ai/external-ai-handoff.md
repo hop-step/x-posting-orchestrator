@@ -433,7 +433,16 @@ GET /v1/publications?limit=20
 Authorization: Bearer <api-key>
 ```
 
-重複投稿を避けるため、同じ内容・同じ日時で再作成する前に、既存Publicationを確認してください。
+一覧は1ページ最大100件です。レスポンスの `publications` は従来と同じで、次ページがあれば `nextCursor` に文字列、最終ページには `null` が返ります。作成日時の降順、同時刻ならPublication IDの降順です。投稿予定日時順ではありません。
+
+```http
+GET /v1/publications?limit=100&xAccountId=acc_xxx&cursor=<nextCursor>
+Authorization: Bearer <api-key>
+```
+
+初回は `cursor` を省略します。2ページ目以降は同じ `xAccountId`・`statusGroups` で、直前の `nextCursor` をURLエンコードして渡してください。権限のないアカウント指定は `404`、不正なカーソルは `400` です。
+
+重複確認では `statusGroups` を省略し、投稿済みだけでなく予約済み・承認待ちも含めて、`nextCursor: null` まで確認してください。ページをたどる順序と実際の公開日時は異なるので、古い作成日時に達しただけでは打ち切りません。途中の取得失敗、カーソルの繰り返し、`nextCursor` 自体がない旧形式のレスポンスでは、確認が完了していないため投稿を作成しません。このAPIが確認できるのはシステムに保存されたPublicationです。
 
 ## 失敗時のルール
 

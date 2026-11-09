@@ -32,6 +32,22 @@ export interface AuditLogInput {
 export interface PublicationListFilter {
   publicationStatuses?: PublicationStatus[];
   stepStatuses?: StepStatus[];
+  xAccountId?: string;
+  cursor?: PublicationListCursor;
+}
+
+export interface PublicationListCursor {
+  createdAtMs: number;
+  id: string;
+}
+
+export interface PublicationListPage {
+  publications: PublicationBundle[];
+  nextCursor: PublicationListCursor | null;
+}
+
+export function comparePublicationListKeys(a: PublicationListCursor, b: PublicationListCursor): number {
+  return a.createdAtMs - b.createdAtMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 export interface PublicationRepository extends AuthRepository {
@@ -39,7 +55,7 @@ export interface PublicationRepository extends AuthRepository {
   createPublicationBundle(bundle: PublicationBundle): Promise<void>;
   updatePublicationBundle(bundle: PublicationBundle): Promise<void>;
   getPublicationBundle(id: string): Promise<PublicationBundle | null>;
-  listPublicationBundlesForClient(clientId: string, limit: number, filter?: PublicationListFilter): Promise<PublicationBundle[]>;
+  listPublicationBundlesForClient(clientId: string, limit: number, filter?: PublicationListFilter): Promise<PublicationListPage>;
   createApproval(approval: ApprovalRecord): Promise<void>;
   updatePublication(record: PublicationRecord): Promise<void>;
   getIdempotencyRecord(clientId: string, key: string): Promise<IdempotencyRecord | null>;

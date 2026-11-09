@@ -1,6 +1,6 @@
 import { D1AuthRepository } from "./auth-repository";
 import type { ApprovalRecord, PublicationBundle, PublicationPlan, PublicationRecord, PublicationStepPlan } from "../../../domain/publications/entities";
-import type { AuditLogInput, IdempotencyRecord, PublicationListFilter, PublicationRepository } from "../../../application/repository";
+import type { AuditLogInput, IdempotencyRecord, PublicationListFilter, PublicationListPage, PublicationRepository } from "../../../application/repository";
 import type { MediaAsset } from "../../../domain/media/entities";
 import type { XAccount } from "../../../domain/auth/types";
 import { randomHex } from "../../../shared/ids";
@@ -148,7 +148,7 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
     return (await this.getPublicationBundlesByIds([id])).get(id) ?? null;
   }
 
-  async listPublicationBundlesForClient(clientId: string, limit: number, filter: PublicationListFilter = {}): Promise<PublicationBundle[]> {
+  async listPublicationBundlesForClient(clientId: string, limit: number, filter: PublicationListFilter = {}): Promise<PublicationListPage> {
     const publicationStatuses = filter.publicationStatuses ?? [];
     const stepStatuses = filter.stepStatuses ?? [];
     const filterClauses: string[] = [];
@@ -170,28 +170,41 @@ export class D1AppRepository extends D1AuthRepository implements PublicationRepo
       );
       bindings.push(...stepStatuses);
     }
-    const filterSql = filterClauses.length > 0 ? `AND (${filterClauses.join(" OR ")})` : "";
-    bindings.push(limit);
+    const conditions = filterClauses.length > 0 ? [`(${filterClauses.join(" OR ")})`] : [];
+    if (filter.xAccountId !== undefined) {
+      conditions.push("p.x_account_id = ?");
+      bindings.push(filter.xAccountId);
+    }
+    if (filter.cursor !== undefined) {
+      conditions.push("(p.created_at_ms, p.id) < (?, ?)");
+      bindings.push(filter.cursor.createdAtMs, filter.cursor.id);
+    }
+    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    bindings.push(limit + 1);
     const rows = await this.database
       .prepare(
-        `SELECT p.id
+        `SELECT p.id, p.created_at_ms
          FROM publications p
          INNER JOIN client_account_permissions cap
           ON cap.x_account_id = p.x_account_id
           AND cap.client_id = ?
           AND cap.permission_level > 0
-         ${filterSql}
-         ORDER BY p.created_at_ms DESC
+         ${whereSql}
+         ORDER BY p.created_at_ms DESC, p.id DESC
          LIMIT ?`
       )
       .bind(...bindings)
-      .all<{ id: string }>();
-    const publicationIds = rows.results.map((row) => row.id);
+      .all<{ id: string; created_at_ms: number }>();
+    const publicationIds = rows.results.slice(0, limit).map((row) => row.id);
+    const last = rows.results[limit - 1];
     const bundles = await this.getPublicationBundlesByIds(publicationIds);
-    return publicationIds.flatMap((id) => {
-      const bundle = bundles.get(id);
-      return bundle === undefined ? [] : [bundle];
-    });
+    return {
+      publications: publicationIds.flatMap((id) => {
+        const bundle = bundles.get(id);
+        return bundle === undefined ? [] : [bundle];
+      }),
+      nextCursor: rows.results.length > limit && last !== undefined ? { createdAtMs: last.created_at_ms, id: last.id } : null
+    };
   }
 
   private async getPublicationBundlesByIds(publicationIds: string[]): Promise<Map<string, PublicationBundle>> {

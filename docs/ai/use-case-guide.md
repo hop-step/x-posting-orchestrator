@@ -380,6 +380,10 @@ GET /v1/publications?limit=100
 Authorization: Bearer <api-key>
 ```
 
+一覧は作成日時・IDの降順で1ページ最大100件です。対象アカウントだけ取得するには `xAccountId` を指定します。次のページは、同じフィルターのまま `cursor` にレスポンスの `nextCursor` を渡します。末尾は `nextCursor: null` です。
+
+重複や同時刻の予約を確認する場合は `statusGroups` を省略して全ページを読みます。途中で取得できないページがある場合や、旧形式で `nextCursor` が返らない場合は、確認が終わるまで作成しません。過去の投稿日時を比較する場合は実際の公開日時や返信Stepの公開日時も参照してください。
+
 ```http
 GET /v1/publications/:id
 Authorization: Bearer <api-key>

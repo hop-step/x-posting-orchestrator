@@ -14,6 +14,7 @@ import { badRequest } from "../../shared/errors";
 import { randomIdGenerator } from "../../shared/ids";
 import { errorMetadata } from "../../shared/logger";
 import type { AppBindings } from "../context";
+import { decodePublicationListCursor, encodePublicationListCursor } from "../publication-list-cursor";
 
 type AppContext = Context<AppBindings>;
 
@@ -81,7 +82,18 @@ export function publicationRoutes(): Hono<AppBindings> {
     const service = serviceFor(c);
     const limit = Number(c.req.query("limit") ?? "50");
     const filter = publicationListFilterFromQuery(c.req.query("statusGroups"));
-    const publications = await service.list(auth.client, Number.isFinite(limit) ? limit : 50, filter);
+    const xAccountId = c.req.query("xAccountId");
+    if (xAccountId !== undefined) {
+      if (xAccountId.length === 0 || xAccountId.length > 256) {
+        throw badRequest("INVALID_X_ACCOUNT_ID", "xAccountId must be between 1 and 256 characters.");
+      }
+      filter.xAccountId = xAccountId;
+    }
+    const cursor = c.req.query("cursor");
+    if (cursor !== undefined) {
+      filter.cursor = decodePublicationListCursor(cursor);
+    }
+    const { publications, nextCursor } = await service.list(auth.client, Number.isFinite(limit) ? limit : 50, filter);
     const includeProblemDismissals = c.req.query("includeProblemDismissals") === "true";
     const problemDismissedPublicationIds = includeProblemDismissals
       ? await listDismissedProblemPublicationIds(
@@ -104,6 +116,7 @@ export function publicationRoutes(): Hono<AppBindings> {
         plans: bundle.plans,
         approvals: bundle.approvals
       })),
+      nextCursor: nextCursor === null ? null : encodePublicationListCursor(nextCursor),
       ...(includeProblemDismissals ? { problemDismissedPublicationIds } : {})
     });
   });
@@ -113,7 +126,7 @@ export function publicationRoutes(): Hono<AppBindings> {
     const service = serviceFor(c);
     const limit = Number(c.req.query("limit") ?? "100");
     const filter = publicationListFilterFromQuery(c.req.query("statusGroups"));
-    const publications = await service.list(auth.client, Number.isFinite(limit) ? limit : 100, filter);
+    const { publications } = await service.list(auth.client, Number.isFinite(limit) ? limit : 100, filter);
     const publicationIds = publications.map((bundle) => bundle.publication.id);
     return c.json({
       publicationIds: await listDismissedProblemPublicationIds(c, publicationIds)

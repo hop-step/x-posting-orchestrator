@@ -18,7 +18,7 @@ describe("D1AppRepository publication listing", () => {
 
       async all<Row>(): Promise<{ results: Row[] }> {
         listQueryCount += 1;
-        return { results: [{ id: "pub_2" }, { id: "pub_1" }] as Row[] };
+        return { results: [{ id: "pub_2", created_at_ms: 1 }, { id: "pub_1", created_at_ms: 1 }] as Row[] };
       }
     }
 
@@ -37,11 +37,12 @@ describe("D1AppRepository publication listing", () => {
     } as unknown as D1Database;
 
     const repository = new D1AppRepository(database);
-    const bundles = await repository.listPublicationBundlesForClient("client_1", 100);
+    const { publications: bundles, nextCursor } = await repository.listPublicationBundlesForClient("client_1", 100);
 
     expect(listQueryCount).toBe(1);
     expect(batchCount).toBe(1);
     expect(bundles.map((bundle) => bundle.publication.id)).toEqual(["pub_2", "pub_1"]);
+    expect(nextCursor).toBeNull();
   });
 });
 

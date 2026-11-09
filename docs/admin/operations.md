@@ -48,6 +48,18 @@ wrangler d1 migrations apply x-posting-orchestrator --remote
 
 ローカルD1の仮データでは、対象0件時の読み取りが9行から1行、未処理1,000件・実行権あり3件から25件を取得する場合は121行から28行になりました。`test/integration/d1-scheduler.test.ts`が実際のrepositoryのSQLで読み取り予算と投稿対象の一致を検証します。本番の行数はD1の`meta.rows_read`または`wrangler d1 insights`で別途確認します。
 
+### Publicationの履歴取得
+
+`0004_publication_list_cursor.sql`はアカウント別一覧の索引を、作成日時とIDの両方でページ送りできる索引に置き換えます。投稿データは変更しません。本番では移行を適用してからWorkerをデプロイし、同じアカウントで `nextCursor` が末尾まで進むことを、投稿を作らず確認します。
+
+週次ジョブでは次の読み取り専用コマンドで全ページを取得できます。
+
+```bash
+pnpm exec tsx --env-file=<env-file> scripts/read-publication-history.ts
+```
+
+環境変数は `X_POSTING_ORCHESTRATOR_BASE_URL`、`X_POSTING_ORCHESTRATOR_API_KEY`、`X_POSTING_ORCHESTRATOR_ACCOUNT_ID` です。コマンドは最終ページを確認した場合にだけ `complete: true` のJSONを出力します。過去60日に関連するPublicationと将来の予約が対象です。旧APIや途中で取得できないページがある場合はエラー終了します。このコマンドはPublicationの作成・変更を行いません。
+
 ## Token再接続
 
 X APIでtoken refreshが失敗すると、X Accountは `AUTH_ERROR` になります。

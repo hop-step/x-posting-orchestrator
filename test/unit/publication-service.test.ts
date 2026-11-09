@@ -41,7 +41,7 @@ describe("PublicationService permissions and approvals", () => {
     const created = await service.create(baseRequest(), ai, "idem-ai-create", requestMeta());
     const publicationId = (created.body as { publication: { id: string } }).publication.id;
 
-    const listed = await service.list(human, 100);
+    const { publications: listed } = await service.list(human, 100);
 
     expect(listed.map((bundle) => bundle.publication.id)).toContain(publicationId);
     expect(listed[0]?.publication.createdByClientId).toBe(ai.id);
@@ -112,9 +112,9 @@ describe("PublicationService permissions and approvals", () => {
       stepStatuses: ["PUBLISHED"]
     };
 
-    const beforeIds = (await service.list(human, 100, beforeFilter)).map((bundle) => bundle.publication.id);
-    const attentionIds = (await service.list(human, 100, attentionFilter)).map((bundle) => bundle.publication.id);
-    const postedIds = (await service.list(human, 100, postedFilter)).map((bundle) => bundle.publication.id);
+    const beforeIds = (await service.list(human, 100, beforeFilter)).publications.map((bundle) => bundle.publication.id);
+    const attentionIds = (await service.list(human, 100, attentionFilter)).publications.map((bundle) => bundle.publication.id);
+    const postedIds = (await service.list(human, 100, postedFilter)).publications.map((bundle) => bundle.publication.id);
 
     expect(beforeIds).toContain(pendingId);
     expect(beforeIds).not.toContain(publishedId);
@@ -158,6 +158,23 @@ describe("PublicationService permissions and approvals", () => {
         requestMeta()
       )
     ).resolves.toMatchObject({ body: { publication: { status: "PENDING_APPROVAL" } } });
+  });
+
+  it("paginates equal creation timestamps without repeating the boundary item", async () => {
+    const ai = client("ai", "AI");
+    const { service } = makeService({ clients: [ai], permissions: [permission(ai.id, 2)] });
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const created = await service.create(baseRequest(), ai, `idem-page-${i}`, requestMeta());
+      ids.push((created.body as { publication: { id: string } }).publication.id);
+    }
+    const first = await service.list(ai, 2, { xAccountId: "acc_1" });
+    expect(first.nextCursor).not.toBeNull();
+    if (first.nextCursor === null) throw new Error("Expected another page.");
+    const second = await service.list(ai, 2, { xAccountId: "acc_1", cursor: first.nextCursor });
+    expect([...first.publications, ...second.publications].map((bundle) => bundle.publication.id)).toEqual(ids.sort().reverse());
+    expect(second.nextCursor).toBeNull();
+    await expect(service.list(ai, 2, { xAccountId: "acc_other" })).rejects.toMatchObject({ httpStatus: 404 });
   });
 
   it("prevents AI actors from approving even if a bad seed includes the scope", async () => {

@@ -2,7 +2,7 @@ import type { AuthRepository } from "../../domain/auth/authorization";
 import type { ApiClient, ClientAccountPermission, XAccount } from "../../domain/auth/types";
 import type { MediaAsset } from "../../domain/media/entities";
 import type { ApprovalRecord, PublicationBundle, PublicationRecord } from "../../domain/publications/entities";
-import type { AuditLogInput, IdempotencyRecord, PublicationListFilter, PublicationRepository, SeedData } from "../../application/repository";
+import { comparePublicationListKeys, type AuditLogInput, type IdempotencyRecord, type PublicationListFilter, type PublicationListPage, type PublicationRepository, type SeedData } from "../../application/repository";
 import { randomHex } from "../../shared/ids";
 import type { PublishQueueMessage } from "../../workers/messages";
 
@@ -70,16 +70,23 @@ export class MemoryRepository implements PublicationRepository, AuthRepository {
     return bundle === undefined ? null : clone(bundle);
   }
 
-  async listPublicationBundlesForClient(clientId: string, limit: number, filter: PublicationListFilter = {}): Promise<PublicationBundle[]> {
-    return [...this.publications.values()]
+  async listPublicationBundlesForClient(clientId: string, limit: number, filter: PublicationListFilter = {}): Promise<PublicationListPage> {
+    const { xAccountId, cursor } = filter;
+    const rows = [...this.publications.values()]
       .filter((bundle) => {
         const permission = this.permissions.get(permissionKey(clientId, bundle.publication.xAccountId));
-        return permission !== undefined && permission.permissionLevel > 0;
+        return permission !== undefined && permission.permissionLevel > 0 &&
+          (xAccountId === undefined || bundle.publication.xAccountId === xAccountId) &&
+          (cursor === undefined || comparePublicationListKeys(bundle.publication, cursor) < 0);
       })
       .filter((bundle) => matchesPublicationListFilter(bundle, filter))
-      .sort((a, b) => b.publication.createdAtMs - a.publication.createdAtMs)
-      .slice(0, limit)
-      .map((bundle) => clone(bundle));
+      .sort((a, b) => comparePublicationListKeys(b.publication, a.publication))
+      .slice(0, limit + 1);
+    const last = rows[limit - 1]?.publication;
+    return {
+      publications: rows.slice(0, limit).map(clone),
+      nextCursor: rows.length > limit && last !== undefined ? { createdAtMs: last.createdAtMs, id: last.id } : null
+    };
   }
 
   async createApproval(approval: ApprovalRecord): Promise<void> {

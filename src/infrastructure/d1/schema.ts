@@ -104,7 +104,7 @@ export const publications = sqliteTable(
     dueIdx: index("idx_publications_pending_due")
       .on(table.nextActionAtMs, table.leaseUntilMs, table.id, table.revision, table.contentHash, table.status)
       .where(sql`${table.status} IN ('SCHEDULED', 'QUEUED', 'AWAITING_FOLLOW_UP', 'RETRY_SCHEDULED')`),
-    accountCreatedIdx: index("idx_publications_account_created").on(table.xAccountId, table.createdAtMs),
+    accountCreatedIdx: index("idx_publications_account_created_id").on(table.xAccountId, sql`${table.createdAtMs} DESC`, sql`${table.id} DESC`),
     creatorCreatedIdx: index("idx_publications_creator_created").on(table.createdByClientId, table.createdAtMs)
   })
 );
