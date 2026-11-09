@@ -477,7 +477,7 @@ export class PublicationService {
         if (preview.policy.decision === "DENY") {
           throw unprocessable("POLICY_DENIED", "Publication was denied by policy.", { reasons: preview.policy.reasons });
         }
-        const status = preview.policy.decision === "ALLOW" && permission.permissionLevel === 3 ? "SCHEDULED" : "PENDING_APPROVAL";
+        const status = decideCreateStatus(permission.permissionLevel, preview.policy);
         const publication: PublicationRecord = {
           ...bundle.publication,
           status,
@@ -574,7 +574,7 @@ export interface RequestMeta {
   requestId: string;
 }
 
-function decideCreateStatus(permissionLevel: 0 | 1 | 2 | 3, policy: PolicyResult): PublicationStatus {
+function decideCreateStatus(permissionLevel: ClientAccountPermission["permissionLevel"], policy: PolicyResult): PublicationStatus {
   if (permissionLevel === 1) {
     return "DRAFT";
   }

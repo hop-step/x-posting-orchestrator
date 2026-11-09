@@ -169,7 +169,7 @@ describe("api client routes", () => {
     expect(db.batches).toHaveLength(0);
   });
 
-  it("updates an account permission for a client", async () => {
+  it.each([3, 4])("updates an account permission to level %i for a client", async (permissionLevel) => {
     const db = new RecordingD1();
     db.firstResults.push(apiClientRow({ id: "client_ai", actor_type: "AI" }));
     db.firstResults.push({ id: "acc_1" });
@@ -184,7 +184,7 @@ describe("api client routes", () => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          permissionLevel: 3,
+          permissionLevel,
           maxThreadParts: 12
         })
       },
@@ -196,7 +196,7 @@ describe("api client routes", () => {
       permission: {
         clientId: "client_ai",
         xAccountId: "acc_1",
-        permissionLevel: 3,
+        permissionLevel,
         maxThreadParts: 12
       }
     });
@@ -205,8 +205,50 @@ describe("api client routes", () => {
       throw new Error("Expected D1 batch.");
     }
     expect(batch[0]?.query).toContain("INSERT INTO client_account_permissions");
-    expect(batch[0]?.bindings.slice(0, 4)).toEqual(["client_ai", "acc_1", 3, 12]);
+    expect(batch[0]?.bindings.slice(0, 4)).toEqual(["client_ai", "acc_1", permissionLevel, 12]);
     expect(batch[1]?.query).toContain("CLIENT_ACCOUNT_PERMISSION_UPDATED");
+  });
+
+  it("creates a level 4 AI client only when explicitly requested", async () => {
+    const db = new RecordingD1();
+    db.firstResults.push({ id: "acc_1" });
+    const app = appWithAuth(client("client_admin", "HUMAN", allScopes));
+    const response = await app.request("/v1/api-clients/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "extended-ai", xAccountId: "acc_1", permissionLevel: 4 })
+    }, envWithDb(db));
+    expect(response.status).toBe(201);
+    expect((await response.json<{ permission: { permissionLevel: number } }>()).permission.permissionLevel).toBe(4);
+    expect(db.batches[0]?.[1]?.bindings.slice(1, 4)).toEqual(["acc_1", 4, 10]);
+  });
+
+  it.each([-1, 4.5, 5])("rejects invalid permission level %s without writing to D1", async (permissionLevel) => {
+    const db = new RecordingD1();
+    const app = appWithAuth(client("client_admin", "HUMAN", allScopes));
+    for (const path of ["/v1/api-clients/ai", "/v1/api-clients/client_ai/permissions/acc_1"]) {
+      const response = await app.request(path, {
+        method: path.endsWith("/ai") ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "extended-ai", xAccountId: "acc_1", permissionLevel })
+      }, envWithDb(db));
+      expect(response.status).toBe(400);
+    }
+    expect(db.statements).toHaveLength(0);
+    expect(db.batches).toHaveLength(0);
+  });
+
+  it("does not allow an AI caller to upgrade its own account permission", async () => {
+    const db = new RecordingD1();
+    const app = appWithAuth(client("client_ai", "AI", ["account:manage"]));
+    const response = await app.request("/v1/api-clients/client_ai/permissions/acc_1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissionLevel: 4 })
+    }, envWithDb(db));
+    expect(response.status).toBe(403);
+    expect(db.statements).toHaveLength(0);
+    expect(db.batches).toHaveLength(0);
   });
 
   it("rejects approval scopes when updating an AI client", async () => {

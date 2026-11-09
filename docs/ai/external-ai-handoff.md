@@ -87,6 +87,12 @@ Idempotency-Key: <uuid>
 
 この設定では、外部AIは投稿案を作成できますが、承認権限は持ちません。投票、画像、スレッド、follow-up返信などは承認待ちとして保存されます。
 
+信頼済みAIの自動投稿運用では、管理者が対象API ClientとX Accountの組み合わせにLevel 4（`EXTENDED_AUTO`）を設定できます。Level 4では投票、follow-up返信、25,000文字までの長文も、他のポリシー条件を満たせば承認なしで予約できます。画像、URL、mention、本文分割スレッド、許可時間外、明示的な `approvalPreference: REQUIRE_APPROVAL` は引き続き承認対象です。解説本文にもURL・mention・禁止表現のチェックを適用します。長文には `longformCapability = ENABLED`、follow-upには `selfReplyCapability = ENABLED` が必要です。
+
+長文の自動予約には `overflowPolicy: REJECT` を使用してください。`LONGFORM_THEN_THREAD` は本文分割fallbackを含むため、Level 4でも承認対象です。
+
+AI自身は権限の変更や承認APIの実行をできません。新規Clientの既定値はLevel 2のままで、既存Clientも自動昇格しません。権限変更だけで既存の `PENDING_APPROVAL` が予約に変わることもありません。承認するか、未来の予約時刻で編集し、previewと作成・更新結果のstatusを確認してください。
+
 画像投稿を扱う外部AIには、追加で `media:create` scopeを付けてください。画像はPublication作成前に `/v1/media` へアップロードし、返ってきた `media.id` をPublicationの `content.mediaIds` に指定します。
 
 任意で付与してよいscope:
@@ -276,7 +282,7 @@ create後の状態で次の行動を決めます。
 
 ## 通常テキスト投稿の例
 
-本文、画像付き投稿、投票、返信、follow-up replyは25,000文字まで指定できます。`overflowPolicy: REJECT` でも280文字相当を超える本文は単一のX Premium長文投稿として計画されます。長文投稿は人間承認が必要になる前提で、previewの `policy` と対象アカウントの `longform` capabilityを確認してください。
+本文、画像付き投稿、投票、返信、follow-up replyは25,000文字まで指定できます。`overflowPolicy: REJECT` でも280文字相当を超える本文は単一のX Premium長文投稿として計画されます。Level 3までは長文は人間承認が必要です。Level 4では `longform` capabilityが `ENABLED` かつ他の承認条件がなければ自動予約できます。previewの `policy` と作成結果のstatusを確認してください。
 
 ```json
 {
@@ -449,6 +455,6 @@ X Posting Orchestratorを使うため、次を教えてください。
 2. 管理者から渡されたAPI base URLを教えてください。未指定の場合は管理者へ確認し、推測したURLへ接続しないでください。
 3. 投稿先のxAccountIdを教えてください。わからなければ、account:read権限付きAPIキーで一覧取得します。
 4. 投稿日時はJSTでよいですか。
-5. 投稿は承認待ち保存でよいですか。投票、画像、follow-up返信は承認待ちになる前提です。
+5. 投稿は承認待ち保存でよいですか。管理者がLevel 4を設定した場合、投票・follow-up返信・長文も条件内なら自動予約できます。画像などは引き続き承認対象です。
 6. 作成したい投稿本文、選択肢、follow-up返信、投稿日時をください。
 ```

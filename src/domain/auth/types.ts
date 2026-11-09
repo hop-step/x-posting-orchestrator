@@ -26,6 +26,7 @@ export type ApiClientStatus = "ACTIVE" | "DISABLED";
 export type XAccountStatus = "ACTIVE" | "DISABLED" | "AUTH_ERROR";
 export type LongformCapability = "UNKNOWN" | "ENABLED" | "DISABLED";
 export type SelfReplyCapability = "UNVERIFIED" | "ENABLED" | "DISABLED";
+export type PermissionLevel = 0 | 1 | 2 | 3 | 4;
 
 export interface ApiClient {
   id: string;
@@ -65,7 +66,7 @@ export interface XAccount {
 export interface ClientAccountPermission {
   clientId: string;
   xAccountId: string;
-  permissionLevel: 0 | 1 | 2 | 3;
+  permissionLevel: PermissionLevel;
   policyId: string | null;
   maxThreadParts: number;
   allowedHours: number[] | null;

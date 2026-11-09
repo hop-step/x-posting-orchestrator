@@ -39,7 +39,7 @@ interface XAccountRow {
 interface PermissionRow {
   client_id: string;
   x_account_id: string;
-  permission_level: 0 | 1 | 2 | 3;
+  permission_level: ClientAccountPermission["permissionLevel"];
   policy_id: string | null;
   max_thread_parts: number;
   allowed_hours_json: string | null;

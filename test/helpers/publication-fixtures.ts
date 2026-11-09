@@ -82,7 +82,7 @@ export function account(overrides: Partial<XAccount> = {}): XAccount {
   };
 }
 
-export function permission(clientId: string, level: 0 | 1 | 2 | 3, xAccountId = "acc_1"): ClientAccountPermission {
+export function permission(clientId: string, level: ClientAccountPermission["permissionLevel"], xAccountId = "acc_1"): ClientAccountPermission {
   return {
     clientId,
     xAccountId,

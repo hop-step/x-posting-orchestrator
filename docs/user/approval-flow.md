@@ -2,7 +2,7 @@
 
 人間承認が必要なPublicationは `PENDING_APPROVAL` になります。
 
-## 承認が必要になる例
+## Level 2・3で承認が必要になる例
 
 - Permission Level 2
 - URL付き投稿
@@ -13,6 +13,10 @@
 - follow-up reply
 - mention
 - 呼び出し元が `approvalPreference: REQUIRE_APPROVAL` を指定した場合
+
+Level 4（`EXTENDED_AUTO`）では、投票、follow-up reply、長文は他のポリシー条件を満たせば承認なしで予約できます。長文・自己返信のcapability確認は必要です。画像、URL、mention、本文分割スレッド、許可時間外、明示的な `REQUIRE_APPROVAL` は引き続き承認対象で、解説本文のURL・mentionも確認します。
+
+Levelを変更しても既存の承認待ちは自動で予約されません。承認するか、未来の予約時刻で編集してポリシーを再評価してください。
 
 ## 承認前に確認するもの
 

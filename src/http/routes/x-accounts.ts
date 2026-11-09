@@ -24,7 +24,7 @@ const createAccountSchema = z.object({
   name: z.string().min(1),
   xUserId: z.string().min(1).optional(),
   xUsername: z.string().min(1).optional(),
-  permissionLevel: z.number().int().min(0).max(3).optional().default(3)
+  permissionLevel: z.number().int().min(0).max(4).optional().default(3)
 });
 
 const capabilitySchema = z.object({

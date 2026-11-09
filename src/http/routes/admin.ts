@@ -1208,7 +1208,8 @@ const adminHtml = String.raw`<!doctype html>
         { value: 0, label: "0 DENY" },
         { value: 1, label: "1 DRAFT_ONLY" },
         { value: 2, label: "2 HUMAN_APPROVAL_REQUIRED" },
-        { value: 3, label: "3 POLICY_BASED_AUTO" }
+        { value: 3, label: "3 POLICY_BASED_AUTO" },
+        { value: 4, label: "4 自動予約（投票・返信・長文）" }
       ];
       const state = {
         apiKey: localStorage.getItem("xpo_admin_api_key") || "",

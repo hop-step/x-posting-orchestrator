@@ -16,6 +16,8 @@ AI Actorは次を実行しないでください。サーバー側でも拒否さ
 
 AIが基本的に行うのは、`preview`、`create`、必要に応じた `list` / `get` / `patch` / `cancel` です。
 
+管理者が対象ClientとX Accountの組み合わせにLevel 4（`EXTENDED_AUTO`）を設定した場合、投票・follow-up・長文は他のポリシー条件を満たせば承認なしで自動予約できます。既定値はLevel 2で、Level 3までの動作は変わりません。画像、URL、mention、本文分割スレッド、許可時間外、明示的な `REQUIRE_APPROVAL` はLevel 4でも承認対象です。解説本文にもURL・mention・禁止表現の確認が適用されます。AI自身では権限を変更せず、previewの `policy` と作成結果のstatusを判断基準にしてください。
+
 画像投稿にも対応しています。画像を使う場合は、Publication作成前に `/v1/media` へアップロードし、返ってきた `media.id` を `content.mediaIds` に指定します。API Clientには `media:create` scopeが必要です。
 
 ## 共通の呼び出しルール
@@ -125,7 +127,7 @@ preview後に確認すること:
 - `contentHash` は承認時に必要な値として保存・表示する
 - `memo` は管理用メモです。Xには投稿されず、`contentHash` にも含まれません
 
-`overflowPolicy: REJECT` でも、280文字相当を超える本文は拒否されず、25,000文字までは単一のX Premium長文投稿になります。長文投稿は `PENDING_APPROVAL` になる前提で扱い、対象アカウントの `longform_capability` を確認してください。
+`overflowPolicy: REJECT` でも、280文字相当を超える本文は拒否されず、25,000文字までは単一のX Premium長文投稿になります。Level 3までは長文投稿を承認待ちとして扱います。Level 4では `longform_capability = ENABLED` かつ他の承認条件がなければ自動予約できます。previewの `policy` を確認してください。
 
 問題なければcreateします。
 
@@ -200,7 +202,7 @@ AIが少しでも迷う場合は、`approvalPreference` を `REQUIRE_APPROVAL` �
 
 次にすること:
 
-- 投票は人間承認が必要になる前提で扱う
+- 投票はLevel 3までは承認対象。Level 4では他の承認条件がなければ自動予約できる
 - 画像と投票は同時に使わない
 - 選択肢は2から4個にする
 - durationは分で指定する
@@ -294,8 +296,9 @@ aiGenerated: true
 
 - previewの `plans` を見て、分割後の各Stepが自然か確認する
 - スレッドには `self_reply_capability = ENABLED` が必要
-- 長文には `longform_capability = ENABLED` が望ましい
-- スレッドや長文は人間承認が必要になる前提で扱う
+- 長文の自動予約には `longform_capability = ENABLED` が必要
+- 本文分割スレッドはLevel 4でも承認対象。長文はLevel 4で他の承認条件がなければ自動予約できる
+- Level 4で長文を自動予約する場合は `overflowPolicy: REJECT` を使う。`LONGFORM_THEN_THREAD` は分割fallbackを含むため承認対象
 
 ## ユースケース6: 既存X投稿IDへ返信する
 
@@ -362,7 +365,7 @@ aiGenerated: true
 
 - follow-upは最大3件
 - `self_reply_capability = ENABLED` が必要
-- follow-upは人間承認が必要になる前提で扱う
+- follow-upはLevel 3までは承認対象。Level 4では他の承認条件がなければ自動予約できる
 - Publication内で作成された親投稿への返信として扱う。既存X投稿IDへの返信は `replyToPostId` を使う
 
 ## ユースケース8: 投稿状態を確認する

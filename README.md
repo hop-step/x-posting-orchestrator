@@ -170,6 +170,8 @@ pnpm create-remote-api-client AI "external-my-project" \
 
 Worker側でAPI Clientとアカウント権限をD1へ登録し、APIキーを一度だけ返します。標準は承認必須のlevel 2です。画像を使う場合は管理画面で`media:create`を追加します。
 
+信頼済みAIには、管理画面で対象ClientのX Account権限をlevel 4（`EXTENDED_AUTO`）へ変更できます。投票・解説返信・長文も条件内なら自動予約されます。画像、URL、mention、本文分割スレッド、許可時間外、明示的な承認指定は引き続き承認対象です。既存権限・承認待ちデータは自動変更しません。詳しくは[権限モデル](docs/common/permission-model.md)を参照してください。
+
 外部AIへ渡すのは、専用`apiKey`、自分のAPI base URL、許可した`xAccountId`、[external-ai-handoff.md](docs/ai/external-ai-handoff.md)です。管理者キー、pepper、XのSecretは渡しません。Clientごとの権限は管理画面の「APIクライアント」で確認・変更できます。
 
 ## 7. Discord通知（任意）

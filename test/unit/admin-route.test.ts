@@ -51,6 +51,7 @@ describe("admin route", () => {
     expect(html).toContain("updateApiClient");
     expect(html).toContain("updateClientPermission");
     expect(html).toContain("permissionLevels");
+    expect(html).toContain("4 自動予約（投票・返信・長文）");
     expect(html).toContain("publicationListUrl");
     expect(html).toContain('params.set("statusGroups", "before,attention")');
     expect(html).toContain('params.set("includeProblemDismissals", "true")');

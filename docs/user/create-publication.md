@@ -38,7 +38,7 @@ X Premiumの長文投稿を前提に、本文は25,000文字まで受け付け�
 
 日本語、中国語、韓国語、絵文字などは重み2として扱われます。URLはXのルールに従って計算します。
 
-preview responseの各Stepに `weightedLength` が含まれます。280を超える単一Stepは長文投稿として扱われ、人間承認と対象アカウントの `longform_capability = ENABLED` が必要です。
+preview responseの各Stepに `weightedLength` が含まれます。280を超える単一Stepは長文投稿として扱われます。Level 3までは人間承認が必要です。Level 4では対象アカウントの `longform_capability = ENABLED` かつ他の承認条件がなければ自動予約できます。最終的にはpreviewの `policy` を確認してください。
 
 ## Thread options
 

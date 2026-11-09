@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { assertScope, assertScopesAllowedForActor, digestApiKey } from "../../domain/auth/api-keys";
-import { scopes, type ActorType, type ApiClientStatus, type Scope } from "../../domain/auth/types";
+import { scopes, type ActorType, type ApiClientStatus, type PermissionLevel, type Scope } from "../../domain/auth/types";
 import { badRequest, forbidden, notFound } from "../../shared/errors";
 import { randomHex } from "../../shared/ids";
 import type { AppBindings } from "../context";
@@ -13,7 +13,7 @@ const createExternalAiClientSchema = z.object({
   name: z.string().min(1).max(120),
   xAccountId: z.string().min(1),
   scopes: z.array(z.enum(scopes)).optional().default(externalAiDefaultScopes),
-  permissionLevel: z.number().int().min(0).max(3).optional().default(2),
+  permissionLevel: z.number().int().min(0).max(4).optional().default(2),
   dailyRequestLimit: z.number().int().positive().nullable().optional().default(100),
   dailyPublishLimit: z.number().int().positive().nullable().optional().default(20),
   maxThreadParts: z.number().int().positive().max(25).optional().default(10)
@@ -32,7 +32,7 @@ const updateApiClientSchema = z
   });
 
 const upsertClientPermissionSchema = z.object({
-  permissionLevel: z.number().int().min(0).max(3),
+  permissionLevel: z.number().int().min(0).max(4),
   maxThreadParts: z.number().int().positive().max(25).optional()
 });
 
@@ -54,7 +54,7 @@ interface ApiClientRow {
 interface ClientPermissionRow {
   client_id: string;
   x_account_id: string;
-  permission_level: 0 | 1 | 2 | 3;
+  permission_level: PermissionLevel;
   policy_id: string | null;
   max_thread_parts: number;
   allowed_hours_json: string | null;

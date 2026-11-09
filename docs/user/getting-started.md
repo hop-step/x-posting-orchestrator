@@ -76,9 +76,11 @@ Responseの `publication.status` を確認します。
 
 ## 自動予約されるケース
 
-Level 3のClientで、ポリシー上安全なTEXT単文の場合だけ `SCHEDULED` になります。
+Level 3のClientでは、ポリシー上安全なTEXT単文が `SCHEDULED` になります。
 
-URL、画像、投票、スレッド、長文、follow-up replyは基本的に人間承認が必要です。
+Level 3ではURL、画像、投票、スレッド、長文、follow-up replyは基本的に人間承認が必要です。
+
+Level 4（`EXTENDED_AUTO`）を管理者が設定したClientは、投票・follow-up reply・長文も他のポリシー条件を満たせば自動予約できます。長文・自己返信のcapability確認が必要です。画像、URL、mention、本文分割スレッド、許可時間外、明示的な `REQUIRE_APPROVAL` は引き続き承認対象です。最終的にはpreviewの `policy` と作成結果の `publication.status` を確認してください。
 
 ## Xに投稿されるタイミング
 

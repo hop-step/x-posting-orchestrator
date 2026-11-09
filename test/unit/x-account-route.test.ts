@@ -122,6 +122,22 @@ describe("x account routes", () => {
     expect(batch[3]?.query).toContain("X_ACCOUNT_DELETED");
   });
 
+  it.each([4, 5])("validates explicit account permission level %i", async (permissionLevel) => {
+    const db = new RecordingD1();
+    const response = await appWithAdminAuth().request("/v1/x/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "acc_new", name: "New Account", permissionLevel })
+    }, envWithDb(db));
+    expect(response.status).toBe(permissionLevel === 4 ? 201 : 400);
+    if (permissionLevel === 4) {
+      expect(db.batches[0]?.[1]?.bindings[2]).toBe(4);
+    } else {
+      expect(db.statements).toHaveLength(0);
+      expect(db.batches).toHaveLength(0);
+    }
+  });
+
   it("blocks account deletion while publications still need action", async () => {
     const db = new RecordingD1();
     db.firstResults.push(accountRow("acc_active"));

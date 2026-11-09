@@ -136,8 +136,27 @@ X Accountごとに `client_account_permissions` を設定します。
 | 1 | AIや投稿候補生成ツール |
 | 2 | 人間承認必須の社内ツール |
 | 3 | 安全な単文のみ自動化したい運用Service |
+| 4 | 投票・解説返信・長文も自動化する信頼済みAIや運用Service |
 
 Level 3でも、URL、画像、投票、スレッド、長文、follow-upは承認待ちになります。
+
+Level 4は投票、follow-up、長文の承認条件を免除します。URL、mention、画像、本文分割スレッド、許可時間外、明示的な `REQUIRE_APPROVAL` は引き続き承認待ちです。長文・自己返信のcapability確認も省略しません。
+
+管理画面の「APIクライアント」で対象ClientのX Account権限を `4 自動予約（投票・返信・長文）` に変更して保存します。APIでは管理者の `account:manage` scopeで次を呼び出します。
+
+```http
+PATCH /v1/api-clients/:clientId/permissions/:xAccountId
+Authorization: Bearer <admin-api-key>
+Content-Type: application/json
+```
+
+```json
+{
+  "permissionLevel": 4
+}
+```
+
+新しいClientの作成API `POST /v1/api-clients/ai` でも `permissionLevel: 4` を明示できます。省略時の既定値はLevel 2のままです。既存Clientや承認待ちPublicationは自動変更しません。既存の承認待ちは承認するか、未来の予約時刻で編集して再評価します。
 
 ## 無効化
 

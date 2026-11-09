@@ -56,6 +56,7 @@ Permission Levelは、API ClientとX Accountの組み合わせに設定します
 | 1 | `DRAFT_ONLY` | 下書き作成のみ |
 | 2 | `HUMAN_APPROVAL_REQUIRED` | 人間承認後に予約 |
 | 3 | `POLICY_BASED_AUTO` | ポリシー内のみ自動予約 |
+| 4 | `EXTENDED_AUTO` | 投票・follow-up・長文もポリシー内なら自動予約 |
 
 ## Level別の典型例
 
@@ -87,7 +88,27 @@ AIや自動生成ツール向けです。Publicationは `DRAFT` になります�
 - follow-upなし
 - 禁止語なし
 
-URL、画像、投票、スレッド、長文、返信、深夜帯などは原則として承認待ちになります。
+URL、画像、投票、スレッド、長文、follow-up返信、設定した許可時間外などは原則として承認待ちになります。
+
+### Level 4
+
+信頼済みのAIや運用Service向けです。Level 3に加えて、投票（`POLL`）、公開後の解説返信（`followUps`）、25,000文字までの長文を、承認なしで `SCHEDULED` にできます。`followUps` は本文分割スレッドとは区別します。
+
+次の条件はLevel 4でも維持します。
+
+- `approvalPreference: REQUIRE_APPROVAL` は必ず承認待ち
+- 画像、URL、mention、本文分割スレッド、許可時間外は承認待ち
+- URL、mention、禁止表現の確認は解説本文にも適用
+- 長文は `longformCapability = ENABLED` が必要。未確認・無効なら承認待ち
+- follow-upは `selfReplyCapability = ENABLED` が必要。未確認・無効なら拒否
+- Actorのscope、投稿先の権限、投稿数・Step数・文字数などの既存制限はそのまま
+- AI ActorはLevel 4でも承認・却下・submit・retry・reconcileを実行できない
+
+長文を自動予約する場合は `overflowPolicy: REJECT` を使用してください。`LONGFORM_THEN_THREAD` は本文分割fallbackを含むため、Level 4でも承認対象です。
+
+既存ClientのLevelは自動では変更しません。管理者が「APIクライアント」で、対象ClientとX Accountの組み合わせにLevel 4を設定してください。新しい外部AI Clientの既定値はLevel 2のままです。
+
+Levelを上げても、既存の `PENDING_APPROVAL` は自動では予約されません。必要な投稿だけ承認するか、未来の予約時刻のまま編集してポリシーを再評価してください。投稿直前にも作成Clientの現在の権限を再確認するため、Levelを下げると承認が必要になる場合があります。
 
 ## 404と403
 

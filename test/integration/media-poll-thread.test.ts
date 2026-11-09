@@ -106,6 +106,71 @@ describe("media, poll follow-up, and thread publishing", () => {
     expect(retryFake.calls[0]?.replyToPostId).toBe("root-post");
   });
 
+  it.each(["AFTER_PARENT_PUBLISHED", "AFTER_POLL_CLOSE"] as const)("publishes a level 4 long poll and long explanation with %s without approval", async (triggerType) => {
+    const ai = client("ai", "AI");
+    const { service, repository, clock } = makeService({ clients: [ai], permissions: [permission(ai.id, 4)] });
+    const text = "Question ".repeat(40);
+    const explanation = "Explanation ".repeat(40);
+    const created = await service.create(baseRequest({
+      kind: "POLL",
+      content: { text, poll: { options: ["True", "False", "Unknown"], durationMinutes: 60 } },
+      followUps: [{ trigger: { type: triggerType, offsetMinutes: 5 }, content: { text: explanation } }]
+    }), ai, "idem-level-four", requestMeta());
+    const publication = (created.body as { publication: { id: string; status: string } }).publication;
+    expect(publication.status).toBe("SCHEDULED");
+    const fakeX = new FakeXAdapter();
+
+    clock.set(Date.parse(scheduledAt) + 60_000);
+    const [rootMessage] = await repository.claimDuePublications(clock.nowMs(), 120_000, 10);
+    if (rootMessage === undefined) {
+      throw new Error("Root was not scheduled.");
+    }
+    await expect(publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message: rootMessage })).resolves.toBe("PUBLISHED");
+    const dueAt = clock.nowMs() + (triggerType === "AFTER_PARENT_PUBLISHED" ? 5 : 65) * 60_000;
+    const awaiting = await repository.getPublicationBundle(publication.id);
+    expect(awaiting?.publication.status).toBe("AWAITING_FOLLOW_UP");
+    expect(awaiting?.publication.nextActionAtMs).toBe(dueAt);
+    expect(fakeX.calls).toHaveLength(1);
+    expect(fakeX.calls[0]?.text).toBe(text.trim());
+    expect(fakeX.calls[0]?.poll?.options).toEqual(["True", "False", "Unknown"]);
+
+    clock.set(dueAt - 1);
+    expect(await repository.claimDuePublications(clock.nowMs(), 120_000, 10)).toEqual([]);
+    clock.set(dueAt);
+    const [followMessage] = await repository.claimDuePublications(clock.nowMs(), 120_000, 10);
+    if (followMessage === undefined) {
+      throw new Error("Follow-up was not scheduled.");
+    }
+    await expect(publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message: followMessage })).resolves.toBe("PUBLISHED");
+    expect(fakeX.calls).toHaveLength(2);
+    expect(fakeX.calls[1]?.text).toBe(explanation.trim());
+    expect(fakeX.calls[1]?.replyToPostId).toBe("0000000001");
+    const completed = await repository.getPublicationBundle(publication.id);
+    expect(completed?.publication.status).toBe("PUBLISHED");
+    expect(completed?.approvals).toEqual([]);
+  });
+
+  it("rechecks permission downgrades before publishing a level 4 poll", async () => {
+    const ai = client("ai", "AI");
+    const accountPermission = permission(ai.id, 4);
+    const { service, repository, clock } = makeService({ clients: [ai], permissions: [accountPermission] });
+    const created = await service.create(baseRequest({
+      kind: "POLL",
+      content: { text: "Question", poll: { options: ["True", "False"], durationMinutes: 60 } }
+    }), ai, "idem-level-four", requestMeta());
+    const publication = (created.body as { publication: { id: string } }).publication;
+    clock.set(Date.parse(scheduledAt));
+    const [message] = await repository.claimDuePublications(clock.nowMs(), 120_000, 10);
+    if (message === undefined) {
+      throw new Error("Publication was not scheduled.");
+    }
+    accountPermission.permissionLevel = 3;
+    const fakeX = new FakeXAdapter();
+    await expect(publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message })).resolves.toBe("NOOP");
+    expect(fakeX.calls).toHaveLength(0);
+    expect((await repository.getPublicationBundle(publication.id))?.publication.status).toBe("PENDING_APPROVAL");
+  });
+
   it("publishes a scheduled text post as a reply to an existing X post ID", async () => {
     const serviceClient = client("svc", "SERVICE");
     const { service, repository, clock } = makeService({ clients: [serviceClient], permissions: [permission(serviceClient.id, 3)] });
