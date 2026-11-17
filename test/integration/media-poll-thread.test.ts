@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaAsset } from "../../src/domain/media/entities";
 import { FakeXAdapter } from "../../src/infrastructure/x/fake-x-adapter";
-import { publishQueueMessage } from "../../src/workers/publisher-consumer";
+import { publishXQueueMessage as publishQueueMessage } from "../helpers/x-publication-publisher";
 import type { PublishQueueMessage } from "../../src/workers/messages";
 import { baseRequest, client, makeService, nowMs, permission, requestMeta, scheduledAt } from "../helpers/publication-fixtures";
 import { testConfig } from "../helpers/publication-fixtures";
@@ -104,6 +104,29 @@ describe("media, poll follow-up, and thread publishing", () => {
     ).resolves.toBe("PUBLISHED");
     expect(retryFake.calls).toHaveLength(1);
     expect(retryFake.calls[0]?.replyToPostId).toBe("root-post");
+  });
+
+  it("uses the approved thread fallback when X rejects a long-form post", async () => {
+    const human = client("human", "HUMAN");
+    const { service, repository, clock } = makeService({ clients: [human], permissions: [permission(human.id, 3)] });
+    const text = "Fixture sentence. ".repeat(25).trim();
+    const created = await service.create(baseRequest({ content: { text }, overflowPolicy: "LONGFORM_THEN_THREAD" }), human, "idem-fallback", requestMeta());
+    const { publication } = created.body as { publication: { id: string; revision: number; contentHash: string } };
+    await service.approve(publication.id, { revision: publication.revision, contentHash: publication.contentHash }, human, "idem-approve", requestMeta());
+    clock.set(Date.parse(scheduledAt));
+    const [message] = await repository.claimDuePublications(clock.nowMs(), 120_000, 10);
+    if (message === undefined) throw new Error("Publication was not scheduled.");
+    const fakeX = new FakeXAdapter([
+      { type: "FALLBACK_ELIGIBLE", httpStatus: 403, errorCode: "X_LONGFORM_FALLBACK_ELIGIBLE", error: {} },
+      { type: "SUCCESS", xPostId: "fallback-root", text: "" }
+    ]);
+    await expect(publishQueueMessage({ repository, xClient: fakeX, tokenManager: null, mediaBucket: null, clock, config: testConfig, message })).resolves.toBe("PUBLISHED");
+    expect(fakeX.calls).toHaveLength(3);
+    expect(fakeX.calls.map(({ replyToPostId }) => replyToPostId)).toEqual([null, null, "fallback-root"]);
+    expect(fakeX.calls[0]?.text).toBe(text);
+    const bundle = await repository.getPublicationBundle(publication.id);
+    expect(bundle?.publication.activePlanId).toBe(bundle?.plans.find((plan) => plan.kind === "FALLBACK")?.id);
+    expect(bundle?.publication.status).toBe("PUBLISHED");
   });
 
   it.each(["AFTER_PARENT_PUBLISHED", "AFTER_POLL_CLOSE"] as const)("publishes a level 4 long poll and long explanation with %s without approval", async (triggerType) => {

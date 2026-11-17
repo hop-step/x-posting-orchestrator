@@ -1,4 +1,5 @@
 import type { AppConfig } from "../../src/env";
+import { xPublicationPlanning } from "../../src/infrastructure/x/x-publication-planning";
 import type { ApiClient, ClientAccountPermission, Scope, XAccount } from "../../src/domain/auth/types";
 import { PublicationService } from "../../src/application/publication-service";
 import { MemoryRepository } from "../../src/infrastructure/memory/memory-repository";
@@ -111,7 +112,8 @@ export function makeService(seed: {
       repository,
       clock,
       ids: new SequenceIdGenerator(),
-      config: testConfig
+      config: testConfig,
+      planning: xPublicationPlanning
     }),
     repository,
     clock

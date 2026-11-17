@@ -1,0 +1,263 @@
+{
+  "request": {
+    "xAccountId": "acc_1",
+    "scheduledAt": "2026-06-22T12:00:00+09:00",
+    "kind": "POLL",
+    "content": {
+      "text": "Fixture question",
+      "poll": {
+        "options": [
+          "True",
+          "False",
+          "Unsure"
+        ],
+        "durationMinutes": 10080
+      }
+    },
+    "overflowPolicy": "REJECT",
+    "approvalPreference": "POLICY",
+    "followUps": [
+      {
+        "trigger": {
+          "type": "AFTER_PARENT_PUBLISHED",
+          "offsetMinutes": 5
+        },
+        "content": {
+          "text": "Fixture explanation"
+        }
+      }
+    ],
+    "memo": {
+      "qa_id": "fixture_01"
+    }
+  },
+  "previewHash": "951d9ecfda961775346f0a3c5717e1067cfbc055ce6e772d2008b27c278e4f4c",
+  "queued": {
+    "publication": {
+      "id": "pub_000001",
+      "xAccountId": "acc_1",
+      "createdByClientId": "fixture_ai",
+      "status": "QUEUED",
+      "kind": "POLL",
+      "revision": 1,
+      "contentHash": "951d9ecfda961775346f0a3c5717e1067cfbc055ce6e772d2008b27c278e4f4c",
+      "request": {
+        "xAccountId": "acc_1",
+        "scheduledAt": "2026-06-22T12:00:00+09:00",
+        "replyToPostId": null,
+        "kind": "POLL",
+        "content": {
+          "text": "Fixture question",
+          "mediaIds": [],
+          "poll": {
+            "options": [
+              "True",
+              "False",
+              "Unsure"
+            ],
+            "durationMinutes": 10080
+          },
+          "madeWithAi": false
+        },
+        "overflowPolicy": "REJECT",
+        "threadOptions": {
+          "numbering": true,
+          "maxParts": 10,
+          "mediaPlacement": "FIRST"
+        },
+        "followUps": [
+          {
+            "trigger": {
+              "type": "AFTER_PARENT_PUBLISHED",
+              "offsetMinutes": 5
+            },
+            "content": {
+              "text": "Fixture explanation"
+            }
+          }
+        ],
+        "approvalPreference": "POLICY",
+        "memo": {
+          "qa_id": "fixture_01"
+        },
+        "scheduledAtMs": 1782097200000
+      },
+      "overflowPolicy": "REJECT",
+      "approvalPreference": "POLICY",
+      "policyId": null,
+      "policyVersion": null,
+      "policyDecision": "REQUIRE_APPROVAL",
+      "policyReasons": [
+        "PERMISSION_LEVEL_REQUIRES_HUMAN_APPROVAL",
+        "POLL_REQUIRES_HUMAN_APPROVAL",
+        "FOLLOW_UP_REQUIRES_HUMAN_APPROVAL",
+        "THREAD_REQUIRES_HUMAN_APPROVAL"
+      ],
+      "approvalRequired": false,
+      "activeApprovalId": "appr_000005",
+      "activePlanId": "plan_000002",
+      "scheduledAtMs": 1782097200000,
+      "nextActionAtMs": 1782097200000,
+      "leaseToken": "fixture-lease-v1",
+      "leaseUntilMs": 1782097320000,
+      "rootPublishedAtMs": null,
+      "completedAtMs": null,
+      "failureCode": null,
+      "failure": null,
+      "createdAtMs": 1782000000000,
+      "updatedAtMs": 1782097200000
+    },
+    "plans": [
+      {
+        "kind": "PRIMARY",
+        "strategy": "STANDARD_SINGLE",
+        "steps": [
+          {
+            "sequence": 1,
+            "stepType": "MAIN",
+            "relation": "ROOT",
+            "replyToStepId": null,
+            "triggerType": "AT_PUBLICATION_TIME",
+            "triggerOffsetMinutes": 0,
+            "resolvedDueAtMs": null,
+            "text": "Fixture question",
+            "poll": {
+              "options": [
+                "True",
+                "False",
+                "Unsure"
+              ],
+              "durationMinutes": 10080
+            },
+            "mediaIds": [],
+            "weightedLength": 16,
+            "madeWithAi": false,
+            "status": "PENDING",
+            "attemptCount": 0,
+            "xPostId": null,
+            "publishedAtMs": null,
+            "nextAttemptAtMs": null,
+            "lastErrorCode": null,
+            "lastError": null,
+            "id": "step_000003"
+          },
+          {
+            "sequence": 2,
+            "stepType": "FOLLOW_UP",
+            "relation": "REPLY_STEP",
+            "replyToStepId": null,
+            "triggerType": "AFTER_PARENT_PUBLISHED",
+            "triggerOffsetMinutes": 5,
+            "resolvedDueAtMs": null,
+            "text": "Fixture explanation",
+            "poll": null,
+            "mediaIds": [],
+            "weightedLength": 19,
+            "madeWithAi": false,
+            "status": "PENDING",
+            "attemptCount": 0,
+            "xPostId": null,
+            "publishedAtMs": null,
+            "nextAttemptAtMs": null,
+            "lastErrorCode": null,
+            "lastError": null,
+            "id": "step_000004"
+          }
+        ],
+        "capabilityRequirements": {
+          "longform": null,
+          "selfReply": "ENABLED"
+        },
+        "isActive": true,
+        "planHash": "083171e8424fc4dd138bf29d8e1c7f1171c4d9d83d47079f08c071975b65f550",
+        "createdAtMs": 1782000000000,
+        "id": "plan_000002"
+      }
+    ],
+    "approvals": [
+      {
+        "id": "appr_000005",
+        "publicationId": "pub_000001",
+        "revision": 1,
+        "contentHash": "951d9ecfda961775346f0a3c5717e1067cfbc055ce6e772d2008b27c278e4f4c",
+        "decision": "APPROVED",
+        "actorClientId": "fixture_human",
+        "comment": null,
+        "revokedAtMs": null,
+        "revokedReason": null,
+        "createdAtMs": 1782000000000
+      }
+    ]
+  },
+  "message": {
+    "version": 1,
+    "publicationId": "pub_000001",
+    "revision": 1,
+    "contentHash": "951d9ecfda961775346f0a3c5717e1067cfbc055ce6e772d2008b27c278e4f4c",
+    "leaseToken": "fixture-lease-v1",
+    "reason": "SCHEDULED",
+    "enqueuedAtMs": 1782097200000
+  },
+  "awaitingReply": {
+    "publication": {
+      "status": "AWAITING_FOLLOW_UP",
+      "nextActionAtMs": 1782097500000,
+      "leaseToken": null,
+      "leaseUntilMs": null,
+      "rootPublishedAtMs": 1782097200000
+    },
+    "steps": [
+      {
+        "sequence": 1,
+        "stepType": "MAIN",
+        "relation": "ROOT",
+        "replyToStepId": null,
+        "triggerType": "AT_PUBLICATION_TIME",
+        "triggerOffsetMinutes": 0,
+        "resolvedDueAtMs": null,
+        "text": "Fixture question",
+        "poll": {
+          "options": [
+            "True",
+            "False",
+            "Unsure"
+          ],
+          "durationMinutes": 10080
+        },
+        "mediaIds": [],
+        "weightedLength": 16,
+        "madeWithAi": false,
+        "status": "PUBLISHED",
+        "attemptCount": 1,
+        "xPostId": "0000000001",
+        "publishedAtMs": 1782097200000,
+        "nextAttemptAtMs": null,
+        "lastErrorCode": null,
+        "lastError": null,
+        "id": "step_000003"
+      },
+      {
+        "sequence": 2,
+        "stepType": "FOLLOW_UP",
+        "relation": "REPLY_STEP",
+        "replyToStepId": null,
+        "triggerType": "AFTER_PARENT_PUBLISHED",
+        "triggerOffsetMinutes": 5,
+        "resolvedDueAtMs": 1782097500000,
+        "text": "Fixture explanation",
+        "poll": null,
+        "mediaIds": [],
+        "weightedLength": 19,
+        "madeWithAi": false,
+        "status": "PENDING",
+        "attemptCount": 0,
+        "xPostId": null,
+        "publishedAtMs": null,
+        "nextAttemptAtMs": null,
+        "lastErrorCode": null,
+        "lastError": null,
+        "id": "step_000004"
+      }
+    ]
+  }
+}

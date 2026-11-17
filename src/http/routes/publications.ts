@@ -7,6 +7,7 @@ import type { PublicationListFilter } from "../../application/repository";
 import { assertScope } from "../../domain/auth/api-keys";
 import { loadConfig } from "../../env";
 import { D1AppRepository } from "../../infrastructure/d1/repositories/app-repository";
+import { xPublicationPlanning } from "../../infrastructure/x/x-publication-planning";
 import { sendDiscordApprovalNotification } from "../../infrastructure/discord/approval-notifier";
 import type { PublicationStatus, StepStatus } from "../../domain/publications/entities";
 import { systemClock } from "../../shared/clock";
@@ -317,7 +318,8 @@ function serviceFor(c: AppContext, repository: PublicationRepository = repositor
     repository,
     clock: systemClock,
     ids: randomIdGenerator,
-    config: loadConfig(c.env)
+    config: loadConfig(c.env),
+    planning: xPublicationPlanning
   });
 }
 

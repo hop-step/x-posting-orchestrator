@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeXAdapter } from "../../src/infrastructure/x/fake-x-adapter";
-import { publishQueueMessage } from "../../src/workers/publisher-consumer";
+import { publishXQueueMessage as publishQueueMessage } from "../helpers/x-publication-publisher";
 import type { PublishQueueMessage } from "../../src/workers/messages";
 import { baseRequest, client, makeService, permission, requestMeta, scheduledAt, testConfig } from "../helpers/publication-fixtures";
 

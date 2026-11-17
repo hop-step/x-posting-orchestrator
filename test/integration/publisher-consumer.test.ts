@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TokenManager } from "../../src/application/token-manager";
 import { encryptToken } from "../../src/infrastructure/crypto/token-crypto";
 import { FakeXAdapter } from "../../src/infrastructure/x/fake-x-adapter";
-import { publishQueueMessage } from "../../src/workers/publisher-consumer";
+import { publishXQueueMessage as publishQueueMessage } from "../helpers/x-publication-publisher";
 import { enqueueDuePublications } from "../../src/workers/scheduler";
 import type { Env } from "../../src/env";
 import type { PublishQueueMessage } from "../../src/workers/messages";

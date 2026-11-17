@@ -84,6 +84,16 @@ export function activeApproval(bundle: PublicationBundle): ApprovalRecord | null
   return bundle.approvals.find((approval) => approval.id === approvalId && approval.decision === "APPROVED") ?? null;
 }
 
+export function hasValidApproval(bundle: PublicationBundle): boolean {
+  const approval = activeApproval(bundle);
+  return (
+    approval !== null &&
+    approval.revision === bundle.publication.revision &&
+    approval.contentHash === bundle.publication.contentHash &&
+    approval.revokedAtMs === null
+  );
+}
+
 export function activePlan(bundle: PublicationBundle): PublicationPlan | null {
   const planId = bundle.publication.activePlanId;
   if (planId === null) {

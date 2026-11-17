@@ -16,12 +16,11 @@ import type {
   PublicationRequest,
   PublicationStatus
 } from "../domain/publications/entities";
-import { buildPublicationPlans } from "../domain/publications/planner";
 import { parsePublicationRequest } from "../domain/publications/schemas";
 import { assertCancellable, assertEditable } from "../domain/publications/state-machine";
-import { evaluatePolicy } from "../domain/policies/policy-engine";
 import { runIdempotent, type IdempotentResult } from "./idempotency";
-import { activeApproval, type PublicationRepository } from "./repository";
+import type { PublicationPlanning } from "./publication-platform";
+import type { PublicationRepository } from "./repository";
 import type { PublicationListFilter, PublicationListPage } from "./repository";
 
 export interface PublicationServiceDeps {
@@ -29,6 +28,7 @@ export interface PublicationServiceDeps {
   clock: Clock;
   ids: IdGenerator;
   config: AppConfig;
+  planning: PublicationPlanning;
 }
 
 export class PublicationService {
@@ -505,13 +505,13 @@ export class PublicationService {
     permission: ClientAccountPermission,
     revision: number
   ): Promise<PreviewResult> {
-    const plans = await buildPublicationPlans({
+    const plans = await this.deps.planning.buildPlans({
       request,
       account,
       nowMs: this.deps.clock.nowMs(),
       config: this.deps.config
     });
-    const policy = evaluatePolicy({
+    const policy = this.deps.planning.evaluatePolicy({
       request,
       plans,
       permission,
@@ -525,16 +525,7 @@ export class PublicationService {
       },
       plans,
       policy,
-      capabilities: {
-        longform: account.longformCapability,
-        selfReply: account.selfReplyCapability
-      },
-      estimate: {
-        postCreateRequests: plans[0]?.steps.length ?? 0,
-        mediaUploads: request.content.mediaIds.length,
-        threadParts: plans[0]?.steps.filter((step) => step.stepType === "MAIN").length ?? 0
-      },
-      warnings: [],
+      ...this.deps.planning.describePreview(request, account, plans),
       contentHash: await contentHashForApproval({
         xAccountId: request.xAccountId,
         scheduledAtMs: request.scheduledAtMs,
@@ -632,14 +623,4 @@ function stripRequestForPatch(request: PublicationRequest): Record<string, unkno
     approvalPreference: request.approvalPreference,
     memo: request.memo
   };
-}
-
-export function hasValidApproval(bundle: PublicationBundle): boolean {
-  const approval = activeApproval(bundle);
-  return (
-    approval !== null &&
-    approval.revision === bundle.publication.revision &&
-    approval.contentHash === bundle.publication.contentHash &&
-    approval.revokedAtMs === null
-  );
 }

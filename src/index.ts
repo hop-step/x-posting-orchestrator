@@ -3,6 +3,7 @@ import { loadConfig, type Env } from "./env";
 import { TokenManager } from "./application/token-manager";
 import { D1AppRepository } from "./infrastructure/d1/repositories/app-repository";
 import { XRestAdapter } from "./infrastructure/x/x-rest-adapter";
+import { createXPublicationPublisher } from "./infrastructure/x/x-publication-publisher";
 import { sendDiscordPublicationFailureNotification, type DiscordPublicationFailureStatus } from "./infrastructure/discord/approval-notifier";
 import { systemClock } from "./shared/clock";
 import { consoleLogger, errorMetadata } from "./shared/logger";
@@ -31,21 +32,19 @@ export default {
 
   async queue(batch: MessageBatch<PublishQueueMessage>, env: Env): Promise<void> {
     const repository = new D1AppRepository(env.DB);
-    const tokenManager = new TokenManager(repository, env, systemClock);
-    const xClient = new XRestAdapter();
+    const publisher = createXPublicationPublisher({
+      repository,
+      tokenManager: new TokenManager(repository, env, systemClock),
+      xClient: new XRestAdapter(),
+      mediaBucket: env.MEDIA_BUCKET ?? null,
+      clock: systemClock,
+      config: loadConfig(env)
+    });
     for (const message of batch.messages) {
       const body = message.body;
       consoleLogger.log("info", "PUBLICATION_QUEUE_MESSAGE_RECEIVED", messageLogFields(body));
       try {
-        const result = await publishQueueMessage({
-          repository,
-          xClient,
-          tokenManager,
-          mediaBucket: env.MEDIA_BUCKET ?? null,
-          clock: systemClock,
-          config: loadConfig(env),
-          message: body
-        });
+        const result = await publishQueueMessage({ repository, publisher, message: body });
         consoleLogger.log("info", "PUBLICATION_QUEUE_MESSAGE_HANDLED", { ...messageLogFields(body), result });
         if (isPublicationFailureResult(result)) {
           await notifyPublicationFailure(env, repository, body.publicationId, result);
